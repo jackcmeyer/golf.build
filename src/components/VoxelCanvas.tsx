@@ -113,7 +113,7 @@ export default function VoxelCanvas() {
     controls.enableDamping = true
     controls.dampingFactor = 0.06
     controls.screenSpacePanning = false
-    controls.minDistance = 8
+    controls.minDistance = 24
     controls.maxDistance = 900
     controls.maxPolarAngle = Math.PI / 2.08
     // Initial config: sculpt tools active, so left/1-finger = tool (not orbit).
