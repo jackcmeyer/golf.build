@@ -204,6 +204,21 @@ export default function VoxelCanvas() {
       }
     }
 
+    // ── Brush highlight ───────────────────────────────────────────────────────
+    const MAX_HIGHLIGHT = 512
+    const highlightGeo = new THREE.BoxGeometry(VOXEL_SIZE * 0.96, 0.3, VOXEL_SIZE * 0.96)
+    const highlightMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false,
+    })
+    const highlightMesh = new THREE.InstancedMesh(highlightGeo, highlightMat, MAX_HIGHLIGHT)
+    highlightMesh.count = 0
+    highlightMesh.renderOrder = 1
+    scene.add(highlightMesh)
+    const highlightDummy = new THREE.Object3D()
+
     // ── Raycasting + tool application ─────────────────────────────────────────
     const raycaster = new THREE.Raycaster()
     const mouseNdc = new THREE.Vector2()
@@ -225,6 +240,34 @@ export default function VoxelCanvas() {
       const vz = Math.floor(inward.z / VOXEL_SIZE + WORLD_DEPTH_VOXELS / 2)
       if (!world.inBounds(vx, vy, vz)) return null
       return { vx, vy, vz }
+    }
+
+    function updateBrushHighlight(e: PointerEvent | null) {
+      if (e === null || toolRef.current === 'orbit') {
+        highlightMesh.count = 0
+        return
+      }
+      const hit = worldCoordsFromHit(e)
+      if (!hit) {
+        highlightMesh.count = 0
+        return
+      }
+      const cols = getColumnsInRadius(hit.vx, hit.vz, brushRef.current)
+      let i = 0
+      for (const [hx, hz] of cols) {
+        const h = world.getSurfaceHeight(hx, hz)
+        if (h < 0) continue
+        const wx = (hx - WORLD_WIDTH_VOXELS / 2) * VOXEL_SIZE + VOXEL_SIZE / 2
+        const wy = (h + 1) * VOXEL_SIZE + 0.08
+        const wz = (hz - WORLD_DEPTH_VOXELS / 2) * VOXEL_SIZE + VOXEL_SIZE / 2
+        highlightDummy.position.set(wx, wy, wz)
+        highlightDummy.updateMatrix()
+        highlightMesh.setMatrixAt(i, highlightDummy.matrix)
+        i++
+        if (i >= MAX_HIGHLIGHT) break
+      }
+      highlightMesh.count = i
+      highlightMesh.instanceMatrix.needsUpdate = true
     }
 
     function applyTool(vx: number, vy: number, vz: number) {
@@ -309,6 +352,7 @@ export default function VoxelCanvas() {
     }
 
     function onPointerMove(e: PointerEvent) {
+      updateBrushHighlight(e)
       if (!isLeftDown || !(e.buttons & 1)) return
       if (toolRef.current === 'orbit') return
       const hit = worldCoordsFromHit(e)
@@ -320,9 +364,14 @@ export default function VoxelCanvas() {
       isLeftDown = false
     }
 
+    function onPointerLeave() {
+      highlightMesh.count = 0
+    }
+
     container.addEventListener('pointerdown', onPointerDown)
     container.addEventListener('pointermove', onPointerMove)
     container.addEventListener('pointerup', onPointerUp)
+    container.addEventListener('pointerleave', onPointerLeave)
 
     // ── Resize ────────────────────────────────────────────────────────────────
     function resize() {
@@ -360,10 +409,13 @@ export default function VoxelCanvas() {
       container.removeEventListener('pointerdown', onPointerDown)
       container.removeEventListener('pointermove', onPointerMove)
       container.removeEventListener('pointerup', onPointerUp)
+      container.removeEventListener('pointerleave', onPointerLeave)
       ro.disconnect()
       controls.dispose()
       renderer.dispose()
       for (const { geo } of chunkMap.values()) geo.dispose()
+      highlightGeo.dispose()
+      highlightMat.dispose()
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement)
     }
   }, [])
