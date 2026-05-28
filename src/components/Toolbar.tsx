@@ -78,7 +78,7 @@ export function Toolbar({
   onSurfaceChange,
 }: ToolbarProps) {
   return (
-    <div className="absolute top-4 left-4 flex flex-col gap-2.5 min-w-[152px] rounded-xl border border-white/[0.09] bg-black/[0.88] p-3 font-mono text-sm select-none pointer-events-auto backdrop-blur-sm">
+    <div className="pointer-events-auto absolute top-4 left-4 flex min-w-[152px] flex-col gap-2.5 rounded-xl border border-white/[0.09] bg-black/[0.88] p-3 font-mono text-sm backdrop-blur-sm select-none">
       {/* Orbit */}
       <ToggleGroup
         type="single"
@@ -127,14 +127,14 @@ export function Toolbar({
           max={12}
           value={[brushSize]}
           onValueChange={(vals) => onBrushChange(vals[0])}
-          className="[&_[data-slot=slider-track]]:bg-white/15 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-thumb]]:size-3.5"
+          className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
         />
       </div>
 
       {/* Surface palette — paint mode only */}
       {toolMode === 'paint' && (
         <div>
-          <div className="text-[10px] text-white/35 mb-1.5">Surface</div>
+          <div className="mb-1.5 text-[10px] text-white/35">Surface</div>
           <div className="flex flex-wrap gap-1">
             {PAINTABLE.map((s) => {
               const hex = VOXEL_COLORS[s] ?? 0x888888
@@ -149,7 +149,7 @@ export function Toolbar({
                   onClick={() => onSurfaceChange(s)}
                   style={{ background: `rgb(${r},${g},${b})` }}
                   className={[
-                    'size-6 cursor-pointer rounded box-border border-2 transition-all',
+                    'box-border size-6 cursor-pointer rounded border-2 transition-all',
                     active
                       ? 'border-white shadow-[0_0_0_1px_oklch(0.527_0.154_150.069)]'
                       : 'border-black/30 hover:border-white/40',
