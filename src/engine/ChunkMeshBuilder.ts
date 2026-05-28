@@ -26,11 +26,16 @@ function hexToRgb(hex: number): [number, number, number] {
   return [(hex >> 16 & 0xff) / 255, (hex >> 8 & 0xff) / 255, (hex & 0xff) / 255]
 }
 
+// LOD 1 only renders the top (+Y) face — no vertical side faces.
+// This cuts geometry by ~5x for distant chunks while preserving the top surface.
+const TOP_FACE_ONLY = [FACE_DEFS[3]]  // index 3 = +Y
+
 export function buildChunkGeometry(
   chunk: VoxelChunk,
   world: VoxelWorld,
   cx: number,
   cz: number,
+  lod = 0,
 ): THREE.BufferGeometry {
   const positions: number[] = []
   const normals: number[] = []
@@ -39,6 +44,7 @@ export function buildChunkGeometry(
 
   const worldOffsetX = cx * CHUNK_SIZE
   const worldOffsetZ = cz * CHUNK_SIZE
+  const faces = lod === 0 ? FACE_DEFS : TOP_FACE_ONLY
 
   for (let ly = 0; ly < CHUNK_HEIGHT; ly++) {
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
@@ -49,7 +55,7 @@ export function buildChunkGeometry(
         const hexColor = VOXEL_COLORS[type as VoxelType] ?? 0xff00ff
         const [r, g, b] = hexToRgb(hexColor)
 
-        for (const face of FACE_DEFS) {
+        for (const face of faces) {
           const [dx, dy, dz] = face.dir
           const neighborType = world.getVoxelType(
             worldOffsetX + lx + dx,

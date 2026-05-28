@@ -15,6 +15,9 @@ import { Toolbar } from './Toolbar'
 
 const HALF_W = (WORLD_WIDTH_VOXELS / 2) * VOXEL_SIZE
 const HALF_D = (WORLD_DEPTH_VOXELS / 2) * VOXEL_SIZE
+// Chunks whose center is within this distance of the orbit target get LOD 0 (full detail).
+// Beyond this, only top faces are generated — ~5x less geometry.
+const LOD_NEAR_DIST = 200
 
 const terrainMaterial = new THREE.MeshLambertMaterial({ vertexColors: true })
 
@@ -101,23 +104,33 @@ export default function VoxelCanvas() {
     scene.add(sun)
 
     // ── Chunk mesh management ─────────────────────────────────────────────────
-    type ChunkEntry = { terrain: THREE.Mesh; outline: THREE.Mesh; geo: THREE.BufferGeometry }
+    type ChunkEntry = { terrain: THREE.Mesh; outline: THREE.Mesh | null; geo: THREE.BufferGeometry }
     const chunkMap = new Map<string, ChunkEntry>()
+    const chunkLOD = new Map<string, number>()
     const terrainMeshes: THREE.Mesh[] = []
 
-    function rebuildChunk(key: string, cx: number, cz: number) {
+    function getLODForChunk(cx: number, cz: number): number {
+      const centerX = (cx + 0.5) * CHUNK_SIZE * VOXEL_SIZE - HALF_W
+      const centerZ = (cz + 0.5) * CHUNK_SIZE * VOXEL_SIZE - HALF_D
+      const dx = controls.target.x - centerX
+      const dz = controls.target.z - centerZ
+      return Math.sqrt(dx * dx + dz * dz) < LOD_NEAR_DIST ? 0 : 1
+    }
+
+    function rebuildChunk(key: string, cx: number, cz: number, lod: number) {
       const chunk = world.getChunk(cx, cz)
       if (!chunk) return
 
       const old = chunkMap.get(key)
       if (old) {
-        scene.remove(old.terrain, old.outline)
+        scene.remove(old.terrain)
+        if (old.outline) scene.remove(old.outline)
         old.geo.dispose()
         const ti = terrainMeshes.indexOf(old.terrain)
         if (ti !== -1) terrainMeshes.splice(ti, 1)
       }
 
-      const geo = buildChunkGeometry(chunk, world, cx, cz)
+      const geo = buildChunkGeometry(chunk, world, cx, cz, lod)
 
       const originX = cx * CHUNK_SIZE * VOXEL_SIZE - HALF_W
       const originZ = cz * CHUNK_SIZE * VOXEL_SIZE - HALF_D
@@ -126,13 +139,20 @@ export default function VoxelCanvas() {
       terrain.position.set(originX, 0, originZ)
       terrain.receiveShadow = true
       terrain.castShadow = true
-
-      const outline = new THREE.Mesh(geo, outlineMaterial)
-      outline.position.set(originX, 0, originZ)
-
-      scene.add(terrain, outline)
+      scene.add(terrain)
       terrainMeshes.push(terrain)
+
+      // Outline only for full-detail chunks — LOD 1 top-only geometry would
+      // produce an odd dark halo instead of edge outlines.
+      let outline: THREE.Mesh | null = null
+      if (lod === 0) {
+        outline = new THREE.Mesh(geo, outlineMaterial)
+        outline.position.set(originX, 0, originZ)
+        scene.add(outline)
+      }
+
       chunkMap.set(key, { terrain, outline, geo })
+      chunkLOD.set(key, lod)
       chunk.isDirty = false
     }
 
@@ -140,7 +160,7 @@ export default function VoxelCanvas() {
     for (const [key, chunk] of world.chunks) {
       if (chunk.isDirty) {
         const [cx, cz] = key.split(',').map(Number)
-        rebuildChunk(key, cx, cz)
+        rebuildChunk(key, cx, cz, getLODForChunk(cx, cz))
       }
     }
 
@@ -275,11 +295,12 @@ export default function VoxelCanvas() {
     function animate() {
       frameId = requestAnimationFrame(animate)
 
-      // Rebuild any chunks dirtied by tool strokes
+      // Rebuild dirty chunks and update LOD as camera moves
       for (const [key, chunk] of world.chunks) {
-        if (chunk.isDirty) {
-          const [cx, cz] = key.split(',').map(Number)
-          rebuildChunk(key, cx, cz)
+        const [cx, cz] = key.split(',').map(Number)
+        const lod = getLODForChunk(cx, cz)
+        if (chunk.isDirty || chunkLOD.get(key) !== lod) {
+          rebuildChunk(key, cx, cz, lod)
         }
       }
 
