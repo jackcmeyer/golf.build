@@ -1,7 +1,7 @@
 import { VoxelType, VOXEL_COLORS } from '../voxelTypes'
 import { ToolMode } from '../engine/toolUtils'
 
-const TOOLS: { id: ToolMode; label: string }[] = [
+const SCULPT_TOOLS: { id: ToolMode; label: string }[] = [
   { id: 'raise',   label: '^ Raise'   },
   { id: 'lower',   label: 'v Lower'   },
   { id: 'flatten', label: '- Flatten' },
@@ -79,9 +79,30 @@ export function Toolbar({
       pointerEvents: 'all',
     }}>
 
-      {/* Tool buttons */}
+      {/* Orbit / camera mode — primary on mobile, fallback on desktop */}
+      <button
+        onClick={() => onToolChange('orbit')}
+        style={{
+          padding: '5px 10px',
+          borderRadius: 5,
+          border: 'none',
+          cursor: 'pointer',
+          textAlign: 'left',
+          background: toolMode === 'orbit' ? '#2a5a8a' : 'rgba(255,255,255,0.06)',
+          color: toolMode === 'orbit' ? '#c0d8f0' : '#9a9a8a',
+          fontSize: 13,
+          fontFamily: 'inherit',
+          letterSpacing: '0.02em',
+        }}
+      >
+        + Orbit
+      </button>
+
+      <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '0 -2px' }} />
+
+      {/* Sculpt tools */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        {TOOLS.map(t => (
+        {SCULPT_TOOLS.map(t => (
           <button
             key={t.id}
             onClick={() => onToolChange(t.id)}
@@ -152,7 +173,9 @@ export function Toolbar({
       <div style={{ color: '#444', fontSize: 10, lineHeight: 1.6 }}>
         L-drag: sculpt<br />
         R-drag: orbit<br />
-        Scroll: zoom
+        Scroll: zoom<br />
+        Mobile: orbit mode<br />
+        + 2-finger zoom
       </div>
     </div>
   )

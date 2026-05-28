@@ -38,6 +38,7 @@ const outlineMaterial = new THREE.ShaderMaterial({
 
 export default function VoxelCanvas() {
   const containerRef = useRef<HTMLDivElement>(null)
+  const controlsRef = useRef<OrbitControls | null>(null)
 
   const [toolMode, setToolMode] = useState<ToolMode>('raise')
   const [brushSize, setBrushSize] = useState(3)
@@ -50,6 +51,21 @@ export default function VoxelCanvas() {
   useEffect(() => { toolRef.current = toolMode }, [toolMode])
   useEffect(() => { brushRef.current = brushSize }, [brushSize])
   useEffect(() => { surfaceRef.current = selectedSurface }, [selectedSurface])
+
+  // Swap OrbitControls touch/mouse config when the active tool changes.
+  // Orbit mode: 1-finger rotates, left-click rotates.
+  // Sculpt modes: 1-finger sculpts, left-click sculpts; 2-finger still zooms/pans.
+  useEffect(() => {
+    const c = controlsRef.current
+    if (!c) return
+    if (toolMode === 'orbit') {
+      c.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }
+      c.touches   = { ONE: THREE.TOUCH.ROTATE,   TWO: THREE.TOUCH.DOLLY_PAN }
+    } else {
+      c.mouseButtons = { LEFT: null as unknown as THREE.MOUSE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
+      c.touches   = { ONE: undefined as unknown as THREE.TOUCH, TWO: THREE.TOUCH.DOLLY_PAN }
+    }
+  }, [toolMode])
 
   useEffect(() => {
     const container = containerRef.current!
@@ -68,7 +84,8 @@ export default function VoxelCanvas() {
     // ── Scene ─────────────────────────────────────────────────────────────────
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x8ab4d4)
-    scene.fog = new THREE.Fog(0x8ab4d4, 300, 700)
+    // Fog starts well beyond max orbit distance so it never hazes the terrain.
+    scene.fog = new THREE.Fog(0x8ab4d4, 1000, 2000)
 
     // ── Camera ────────────────────────────────────────────────────────────────
     const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 10000)
@@ -81,13 +98,13 @@ export default function VoxelCanvas() {
     controls.dampingFactor = 0.06
     controls.screenSpacePanning = false
     controls.minDistance = 8
-    controls.maxDistance = 600
+    controls.maxDistance = 900
     controls.maxPolarAngle = Math.PI / 2.08
-    controls.mouseButtons = {
-      LEFT: null as unknown as THREE.MOUSE,
-      MIDDLE: THREE.MOUSE.DOLLY,
-      RIGHT: THREE.MOUSE.ROTATE,
-    }
+    // Initial config: sculpt tools active, so left/1-finger = tool (not orbit).
+    // The toolMode useEffect will update this whenever the active mode changes.
+    controls.mouseButtons = { LEFT: null as unknown as THREE.MOUSE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
+    controls.touches = { ONE: undefined as unknown as THREE.TOUCH, TWO: THREE.TOUCH.DOLLY_PAN }
+    controlsRef.current = controls
 
     // ── Lighting ──────────────────────────────────────────────────────────────
     scene.add(new THREE.AmbientLight(0xd0e8ff, 0.55))
@@ -257,6 +274,7 @@ export default function VoxelCanvas() {
 
     function onPointerDown(e: PointerEvent) {
       if (e.button !== 0) return
+      if (toolRef.current === 'orbit') return  // let OrbitControls own this gesture
       isLeftDown = true
       container.setPointerCapture(e.pointerId)
       const hit = worldCoordsFromHit(e)
@@ -265,6 +283,7 @@ export default function VoxelCanvas() {
 
     function onPointerMove(e: PointerEvent) {
       if (!isLeftDown || !(e.buttons & 1)) return
+      if (toolRef.current === 'orbit') return
       const hit = worldCoordsFromHit(e)
       if (hit) applyTool(hit.vx, hit.vy, hit.vz)
     }
