@@ -1,29 +1,59 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { VoxelType, VOXEL_COLORS } from '../voxelTypes'
+import { VoxelWorld } from '../engine/VoxelWorld'
+import { buildChunkGeometry } from '../engine/ChunkMeshBuilder'
+import { initWorld } from '../engine/worldInit'
+import {
+  VOXEL_SIZE, CHUNK_SIZE,
+  WORLD_WIDTH_VOXELS, WORLD_DEPTH_VOXELS,
+  CHUNK_HEIGHT,
+} from '../engine/constants'
+import { ToolMode, getColumnsInRadius } from '../engine/toolUtils'
+import { VoxelType } from '../voxelTypes'
+import { Toolbar } from './Toolbar'
 
-const VOXEL_SIZE = 2
-const GRID = 20
+const HALF_W = (WORLD_WIDTH_VOXELS / 2) * VOXEL_SIZE
+const HALF_D = (WORLD_DEPTH_VOXELS / 2) * VOXEL_SIZE
 
-function surfaceAt(x: number, z: number): VoxelType {
-  if (z <= 2 && x >= 7 && x <= 12) return VoxelType.TEE_GRASS
-  if (x >= 7 && x <= 12 && z >= 3 && z <= 10) return VoxelType.FAIRWAY_GRASS
-  if (x >= 6 && x <= 13 && z >= 11 && z <= 16) return VoxelType.GREEN_GRASS
-  if (z >= 12 && z <= 15 && (x === 4 || x === 5)) return VoxelType.BUNKER_SAND_WHITE
-  if (z >= 12 && z <= 15 && (x === 14 || x === 15)) return VoxelType.BUNKER_SAND_WHITE
-  if (x === 14 && z >= 3 && z <= 10) return VoxelType.CART_PATH_CONCRETE
-  if (x >= 15 && z >= 15) return VoxelType.STILL_WATER
-  if (x <= 3 && z >= 14) return VoxelType.HEATHER
-  if (x >= 3 && x <= 16 && z >= 3 && z <= 16) return VoxelType.INTERMEDIATE_ROUGH
-  return VoxelType.PRIMARY_ROUGH
-}
+const terrainMaterial = new THREE.MeshLambertMaterial({ vertexColors: true })
+
+const outlineMaterial = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  vertexShader: `
+    void main() {
+      vec3 pos = position + normal * 0.28;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    }
+  `,
+  fragmentShader: `
+    void main() {
+      gl_FragColor = vec4(0.07, 0.07, 0.04, 1.0);
+    }
+  `,
+})
 
 export default function VoxelCanvas() {
   const containerRef = useRef<HTMLDivElement>(null)
 
+  const [toolMode, setToolMode] = useState<ToolMode>('raise')
+  const [brushSize, setBrushSize] = useState(3)
+  const [selectedSurface, setSelectedSurface] = useState<VoxelType>(VoxelType.FAIRWAY_GRASS)
+
+  // Refs so Three.js handlers always see current values without re-running the effect
+  const toolRef = useRef(toolMode)
+  const brushRef = useRef(brushSize)
+  const surfaceRef = useRef(selectedSurface)
+  useEffect(() => { toolRef.current = toolMode }, [toolMode])
+  useEffect(() => { brushRef.current = brushSize }, [brushSize])
+  useEffect(() => { surfaceRef.current = selectedSurface }, [selectedSurface])
+
   useEffect(() => {
     const container = containerRef.current!
+
+    // ── World ──────────────────────────────────────────────────────────────────
+    const world = new VoxelWorld(WORLD_WIDTH_VOXELS, WORLD_DEPTH_VOXELS)
+    initWorld(world)
 
     // ── Renderer ──────────────────────────────────────────────────────────────
     const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -35,60 +65,198 @@ export default function VoxelCanvas() {
     // ── Scene ─────────────────────────────────────────────────────────────────
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x8ab4d4)
-    scene.fog = new THREE.Fog(0x8ab4d4, 80, 200)
+    scene.fog = new THREE.Fog(0x8ab4d4, 300, 700)
 
     // ── Camera ────────────────────────────────────────────────────────────────
-    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 10000)
-    camera.position.set(0, 30, 45)
+    const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 10000)
+    camera.position.set(0, 220, 380)
 
     // ── Controls ──────────────────────────────────────────────────────────────
     const controls = new OrbitControls(camera, renderer.domElement)
+    controls.target.set(0, 6, 0)
     controls.enableDamping = true
     controls.dampingFactor = 0.06
     controls.screenSpacePanning = false
-    controls.minDistance = 5
-    controls.maxDistance = 300
-    controls.maxPolarAngle = Math.PI / 2.05
+    controls.minDistance = 8
+    controls.maxDistance = 600
+    controls.maxPolarAngle = Math.PI / 2.08
+    controls.mouseButtons = {
+      LEFT: null as unknown as THREE.MOUSE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.ROTATE,
+    }
 
     // ── Lighting ──────────────────────────────────────────────────────────────
-    scene.add(new THREE.AmbientLight(0xd0e8ff, 0.6))
+    scene.add(new THREE.AmbientLight(0xd0e8ff, 0.55))
 
-    const sunLight = new THREE.DirectionalLight(0xfff0d0, 1.4)
-    sunLight.position.set(60, 100, 40)
-    sunLight.castShadow = true
-    sunLight.shadow.mapSize.set(2048, 2048)
-    sunLight.shadow.camera.near = 0.5
-    sunLight.shadow.camera.far = 300
-    const sc = sunLight.shadow.camera as THREE.OrthographicCamera
-    sc.left = -60; sc.right = 60; sc.top = 60; sc.bottom = -60
-    sunLight.shadow.bias = -0.001
-    scene.add(sunLight)
+    const sun = new THREE.DirectionalLight(0xfff4d8, 1.3)
+    sun.position.set(80, 140, 60)
+    sun.castShadow = true
+    sun.shadow.mapSize.set(2048, 2048)
+    sun.shadow.camera.near = 1
+    sun.shadow.camera.far = 600
+    const sc = sun.shadow.camera as THREE.OrthographicCamera
+    sc.left = -300; sc.right = 300; sc.top = 300; sc.bottom = -300
+    sun.shadow.bias = -0.0005
+    scene.add(sun)
 
-    // ── Materials ─────────────────────────────────────────────────────────────
-    const materialCache = new Map<VoxelType, THREE.MeshLambertMaterial>()
-    function getMaterial(type: VoxelType) {
-      if (!materialCache.has(type)) {
-        materialCache.set(type, new THREE.MeshLambertMaterial({
-          color: VOXEL_COLORS[type] ?? 0xff00ff,
-        }))
+    // ── Chunk mesh management ─────────────────────────────────────────────────
+    type ChunkEntry = { terrain: THREE.Mesh; outline: THREE.Mesh; geo: THREE.BufferGeometry }
+    const chunkMap = new Map<string, ChunkEntry>()
+    const terrainMeshes: THREE.Mesh[] = []
+
+    function rebuildChunk(key: string, cx: number, cz: number) {
+      const chunk = world.getChunk(cx, cz)
+      if (!chunk) return
+
+      const old = chunkMap.get(key)
+      if (old) {
+        scene.remove(old.terrain, old.outline)
+        old.geo.dispose()
+        const ti = terrainMeshes.indexOf(old.terrain)
+        if (ti !== -1) terrainMeshes.splice(ti, 1)
       }
-      return materialCache.get(type)!
+
+      const geo = buildChunkGeometry(chunk, world, cx, cz)
+
+      const originX = cx * CHUNK_SIZE * VOXEL_SIZE - HALF_W
+      const originZ = cz * CHUNK_SIZE * VOXEL_SIZE - HALF_D
+
+      const terrain = new THREE.Mesh(geo, terrainMaterial)
+      terrain.position.set(originX, 0, originZ)
+      terrain.receiveShadow = true
+      terrain.castShadow = true
+
+      const outline = new THREE.Mesh(geo, outlineMaterial)
+      outline.position.set(originX, 0, originZ)
+
+      scene.add(terrain, outline)
+      terrainMeshes.push(terrain)
+      chunkMap.set(key, { terrain, outline, geo })
+      chunk.isDirty = false
     }
 
-    // ── Voxel grid ────────────────────────────────────────────────────────────
-    const boxGeo = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE)
-    for (let x = 0; x < GRID; x++) {
-      for (let z = 0; z < GRID; z++) {
-        const mesh = new THREE.Mesh(boxGeo, getMaterial(surfaceAt(x, z)))
-        mesh.position.set(
-          (x - GRID / 2 + 0.5) * VOXEL_SIZE,
-          0,
-          (z - GRID / 2 + 0.5) * VOXEL_SIZE,
-        )
-        mesh.receiveShadow = true
-        scene.add(mesh)
+    // Initial build — synchronous before first frame
+    for (const [key, chunk] of world.chunks) {
+      if (chunk.isDirty) {
+        const [cx, cz] = key.split(',').map(Number)
+        rebuildChunk(key, cx, cz)
       }
     }
+
+    // ── Raycasting + tool application ─────────────────────────────────────────
+    const raycaster = new THREE.Raycaster()
+    const mouseNdc = new THREE.Vector2()
+    let isLeftDown = false
+
+    function worldCoordsFromHit(e: PointerEvent) {
+      const rect = container.getBoundingClientRect()
+      mouseNdc.set(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      )
+      raycaster.setFromCamera(mouseNdc, camera)
+      const hits = raycaster.intersectObjects(terrainMeshes)
+      if (hits.length === 0) return null
+      const hit = hits[0]
+      const inward = hit.point.clone().addScaledVector(hit.face!.normal, -0.01)
+      const vx = Math.floor(inward.x / VOXEL_SIZE + WORLD_WIDTH_VOXELS / 2)
+      const vy = Math.floor(inward.y / VOXEL_SIZE)
+      const vz = Math.floor(inward.z / VOXEL_SIZE + WORLD_DEPTH_VOXELS / 2)
+      if (!world.inBounds(vx, vy, vz)) return null
+      return { vx, vy, vz }
+    }
+
+    function applyTool(vx: number, vy: number, vz: number) {
+      const tool = toolRef.current
+      const radius = brushRef.current
+      const surface = surfaceRef.current
+      const cols = getColumnsInRadius(vx, vz, radius)
+
+      if (tool === 'raise') {
+        for (const [x, z] of cols) {
+          const h = world.getSurfaceHeight(x, z)
+          if (h >= 0 && h < CHUNK_HEIGHT - 1) {
+            world.setVoxel(x, h + 1, z, world.getVoxelType(x, h, z))
+          }
+        }
+      } else if (tool === 'lower') {
+        for (const [x, z] of cols) {
+          const h = world.getSurfaceHeight(x, z)
+          if (h > 0) world.setVoxel(x, h, z, VoxelType.AIR)
+        }
+      } else if (tool === 'flatten') {
+        for (const [x, z] of cols) {
+          const h = world.getSurfaceHeight(x, z)
+          const colType = h >= 0 ? world.getVoxelType(x, h, z) : VoxelType.PRIMARY_ROUGH
+          if (h < vy) {
+            for (let y = h + 1; y <= vy; y++) {
+              world.setVoxel(x, y, z, y === vy ? colType : VoxelType.BARE_SOIL)
+            }
+          } else if (h > vy) {
+            for (let y = vy + 1; y <= h; y++) world.setVoxel(x, y, z, VoxelType.AIR)
+          }
+        }
+      } else if (tool === 'smooth') {
+        // Snapshot heights before modifying
+        const snap = new Map<string, number>()
+        for (const [x, z] of cols) {
+          for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+              const k = `${x + dx},${z + dz}`
+              if (!snap.has(k)) snap.set(k, world.getSurfaceHeight(x + dx, z + dz))
+            }
+          }
+        }
+        for (const [x, z] of cols) {
+          let sum = 0, count = 0
+          for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+              const h2 = snap.get(`${x + dx},${z + dz}`) ?? -1
+              if (h2 >= 0) { sum += h2; count++ }
+            }
+          }
+          if (count === 0) continue
+          const target = Math.round(sum / count)
+          const cur = snap.get(`${x},${z}`) ?? -1
+          if (cur < 0) continue
+          const colType = world.getVoxelType(x, cur, z)
+          if (cur < target) {
+            for (let y = cur + 1; y <= target; y++) world.setVoxel(x, y, z, colType)
+          } else if (cur > target) {
+            for (let y = target + 1; y <= cur; y++) world.setVoxel(x, y, z, VoxelType.AIR)
+          }
+        }
+      } else if (tool === 'paint') {
+        for (const [x, z] of cols) {
+          const h = world.getSurfaceHeight(x, z)
+          if (h >= 0) world.setVoxel(x, h, z, surface)
+        }
+      }
+    }
+
+    function onPointerDown(e: PointerEvent) {
+      if (e.button !== 0) return
+      isLeftDown = true
+      container.setPointerCapture(e.pointerId)
+      const hit = worldCoordsFromHit(e)
+      if (hit) applyTool(hit.vx, hit.vy, hit.vz)
+    }
+
+    function onPointerMove(e: PointerEvent) {
+      if (!isLeftDown || !(e.buttons & 1)) return
+      const hit = worldCoordsFromHit(e)
+      if (hit) applyTool(hit.vx, hit.vy, hit.vz)
+    }
+
+    function onPointerUp(e: PointerEvent) {
+      if (e.button !== 0) return
+      isLeftDown = false
+    }
+
+    container.addEventListener('pointerdown', onPointerDown)
+    container.addEventListener('pointermove', onPointerMove)
+    container.addEventListener('pointerup', onPointerUp)
 
     // ── Resize ────────────────────────────────────────────────────────────────
     function resize() {
@@ -102,10 +270,19 @@ export default function VoxelCanvas() {
     const ro = new ResizeObserver(resize)
     ro.observe(container)
 
-    // ── Loop ──────────────────────────────────────────────────────────────────
+    // ── Animate ───────────────────────────────────────────────────────────────
     let frameId: number
     function animate() {
       frameId = requestAnimationFrame(animate)
+
+      // Rebuild any chunks dirtied by tool strokes
+      for (const [key, chunk] of world.chunks) {
+        if (chunk.isDirty) {
+          const [cx, cz] = key.split(',').map(Number)
+          rebuildChunk(key, cx, cz)
+        }
+      }
+
       controls.update()
       renderer.render(scene, camera)
     }
@@ -113,14 +290,28 @@ export default function VoxelCanvas() {
 
     return () => {
       cancelAnimationFrame(frameId)
+      container.removeEventListener('pointerdown', onPointerDown)
+      container.removeEventListener('pointermove', onPointerMove)
+      container.removeEventListener('pointerup', onPointerUp)
       ro.disconnect()
       controls.dispose()
       renderer.dispose()
-      materialCache.forEach(m => m.dispose())
-      boxGeo.dispose()
-      container.removeChild(renderer.domElement)
+      for (const { geo } of chunkMap.values()) geo.dispose()
+      if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement)
     }
   }, [])
 
-  return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+  return (
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      <Toolbar
+        toolMode={toolMode}
+        onToolChange={setToolMode}
+        brushSize={brushSize}
+        onBrushChange={setBrushSize}
+        selectedSurface={selectedSurface}
+        onSurfaceChange={setSelectedSurface}
+      />
+    </div>
+  )
 }

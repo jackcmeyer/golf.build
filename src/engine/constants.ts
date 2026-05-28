@@ -1,0 +1,7 @@
+export const VOXEL_SIZE = 2
+export const CHUNK_SIZE = 32
+export const CHUNK_HEIGHT = 64
+export const WORLD_WIDTH_CHUNKS = 7
+export const WORLD_DEPTH_CHUNKS = 7
+export const WORLD_WIDTH_VOXELS = WORLD_WIDTH_CHUNKS * CHUNK_SIZE  // 224
+export const WORLD_DEPTH_VOXELS = WORLD_DEPTH_CHUNKS * CHUNK_SIZE  // 224
