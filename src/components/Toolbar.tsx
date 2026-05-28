@@ -1,10 +1,13 @@
 import { VoxelType, VOXEL_COLORS } from '../voxelTypes'
 import { ToolMode } from '../engine/toolUtils'
+import { Slider } from '@/components/ui/slider'
+import { Separator } from '@/components/ui/separator'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 const SCULPT_TOOLS: { id: ToolMode; label: string }[] = [
   { id: 'raise',   label: '^ Raise'   },
   { id: 'lower',   label: 'v Lower'   },
-  { id: 'flatten', label: '- Flatten' },
+  { id: 'flatten', label: '— Flatten' },
   { id: 'smooth',  label: '~ Smooth'  },
   { id: 'paint',   label: '# Paint'   },
 ]
@@ -45,6 +48,16 @@ const SURFACE_LABELS: Partial<Record<VoxelType, string>> = {
   [VoxelType.BARE_SOIL]:          'Soil',
 }
 
+const ITEM_BASE = [
+  'w-full justify-start text-xs tracking-wide',
+  'h-auto py-1.5 px-1.5',
+  'border-white/10 bg-white/[0.04] text-white/50',
+  'hover:bg-white/[0.08] hover:text-white/80',
+].join(' ')
+
+const ORBIT_ACTIVE  = 'data-[state=on]:bg-blue-900/50  data-[state=on]:text-blue-200  data-[state=on]:border-blue-700/40'
+const SCULPT_ACTIVE = 'data-[state=on]:bg-green-900/50 data-[state=on]:text-green-200 data-[state=on]:border-green-800/40'
+
 interface ToolbarProps {
   toolMode: ToolMode
   onToolChange: (t: ToolMode) => void
@@ -60,87 +73,61 @@ export function Toolbar({
   selectedSurface, onSurfaceChange,
 }: ToolbarProps) {
   return (
-    <div style={{
-      position: 'absolute',
-      top: 16,
-      left: 16,
-      background: 'rgba(14, 12, 10, 0.88)',
-      borderRadius: 8,
-      padding: '12px 14px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 10,
-      userSelect: 'none',
-      backdropFilter: 'blur(8px)',
-      border: '1px solid rgba(255,255,255,0.09)',
-      minWidth: 150,
-      fontFamily: 'ui-monospace, monospace',
-      fontSize: 13,
-      pointerEvents: 'all',
-    }}>
+    <div className="absolute top-4 left-4 flex flex-col gap-2.5 min-w-[152px] rounded-xl border border-white/[0.09] bg-black/[0.88] p-3 font-mono text-sm select-none pointer-events-auto backdrop-blur-sm">
 
-      {/* Orbit / camera mode — primary on mobile, fallback on desktop */}
-      <button
-        onClick={() => onToolChange('orbit')}
-        style={{
-          padding: '5px 10px',
-          borderRadius: 5,
-          border: 'none',
-          cursor: 'pointer',
-          textAlign: 'left',
-          background: toolMode === 'orbit' ? '#2a5a8a' : 'rgba(255,255,255,0.06)',
-          color: toolMode === 'orbit' ? '#c0d8f0' : '#9a9a8a',
-          fontSize: 13,
-          fontFamily: 'inherit',
-          letterSpacing: '0.02em',
-        }}
+      {/* Orbit */}
+      <ToggleGroup
+        type="single"
+        value={toolMode === 'orbit' ? 'orbit' : ''}
+        onValueChange={(v) => { if (v) onToolChange('orbit') }}
+        orientation="vertical"
+        spacing={0}
+        variant="outline"
+        size="sm"
+        className="w-full"
       >
-        + Orbit
-      </button>
+        <ToggleGroupItem value="orbit" className={`${ITEM_BASE} ${ORBIT_ACTIVE}`}>
+          + Orbit
+        </ToggleGroupItem>
+      </ToggleGroup>
 
-      <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '0 -2px' }} />
+      <Separator className="bg-white/[0.08]" />
 
       {/* Sculpt tools */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <ToggleGroup
+        type="single"
+        value={toolMode !== 'orbit' ? toolMode : ''}
+        onValueChange={(v) => { if (v) onToolChange(v as ToolMode) }}
+        orientation="vertical"
+        spacing={0}
+        variant="outline"
+        size="sm"
+        className="w-full"
+      >
         {SCULPT_TOOLS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => onToolChange(t.id)}
-            style={{
-              padding: '5px 10px',
-              borderRadius: 5,
-              border: 'none',
-              cursor: 'pointer',
-              textAlign: 'left',
-              background: toolMode === t.id ? '#4a7a2e' : 'rgba(255,255,255,0.06)',
-              color: toolMode === t.id ? '#d8f0c0' : '#9a9a8a',
-              fontSize: 13,
-              fontFamily: 'inherit',
-              letterSpacing: '0.02em',
-            }}
-          >
+          <ToggleGroupItem key={t.id} value={t.id} className={`${ITEM_BASE} ${SCULPT_ACTIVE}`}>
             {t.label}
-          </button>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
 
       {/* Brush size */}
-      <div>
-        <div style={{ color: '#666', fontSize: 11, marginBottom: 4 }}>
-          Brush — {brushSize}vx
-        </div>
-        <input
-          type="range" min={1} max={12} value={brushSize}
-          onChange={e => onBrushChange(Number(e.target.value))}
-          style={{ width: '100%', cursor: 'pointer', accentColor: '#4a7a2e' }}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] text-white/35">Brush — {brushSize}vx</span>
+        <Slider
+          min={1}
+          max={12}
+          value={[brushSize]}
+          onValueChange={(vals) => onBrushChange(vals[0])}
+          className="[&_[data-slot=slider-track]]:bg-white/15 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-thumb]]:size-3.5"
         />
       </div>
 
       {/* Surface palette — paint mode only */}
       {toolMode === 'paint' && (
         <div>
-          <div style={{ color: '#666', fontSize: 11, marginBottom: 6 }}>Surface</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          <div className="text-[10px] text-white/35 mb-1.5">Surface</div>
+          <div className="flex flex-wrap gap-1">
             {PAINTABLE.map(s => {
               const hex = VOXEL_COLORS[s] ?? 0x888888
               const r = (hex >> 16) & 0xff
@@ -152,16 +139,13 @@ export function Toolbar({
                   key={s}
                   title={SURFACE_LABELS[s] ?? String(s)}
                   onClick={() => onSurfaceChange(s)}
-                  style={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: 4,
-                    background: `rgb(${r},${g},${b})`,
-                    cursor: 'pointer',
-                    border: active ? '2px solid #fff' : '2px solid rgba(0,0,0,0.3)',
-                    boxSizing: 'border-box',
-                    boxShadow: active ? '0 0 0 1px #4a7a2e' : 'none',
-                  }}
+                  style={{ background: `rgb(${r},${g},${b})` }}
+                  className={[
+                    'size-6 cursor-pointer rounded box-border border-2 transition-all',
+                    active
+                      ? 'border-white shadow-[0_0_0_1px_oklch(0.527_0.154_150.069)]'
+                      : 'border-black/30 hover:border-white/40',
+                  ].join(' ')}
                 />
               )
             })}
@@ -169,14 +153,14 @@ export function Toolbar({
         </div>
       )}
 
-      {/* Keyboard hint */}
-      <div style={{ color: '#444', fontSize: 10, lineHeight: 1.6 }}>
+      {/* Keyboard / touch hints */}
+      <p className="text-[10px] leading-relaxed text-white/22">
         L-drag: sculpt<br />
         R-drag: orbit<br />
         Scroll: zoom<br />
         Mobile: orbit mode<br />
         + 2-finger zoom
-      </div>
+      </p>
     </div>
   )
 }
