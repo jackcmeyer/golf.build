@@ -67,6 +67,14 @@ interface ToolbarProps {
   onBrushChange: (s: number) => void
   selectedSurface: VoxelType
   onSurfaceChange: (s: VoxelType) => void
+  timeOfDay: number
+  onTimeOfDayChange: (t: number) => void
+}
+
+function formatHour(t: number): string {
+  const h = Math.floor(t)
+  const m = Math.round((t - h) * 60)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
 export function Toolbar({
@@ -76,6 +84,8 @@ export function Toolbar({
   onBrushChange,
   selectedSurface,
   onSurfaceChange,
+  timeOfDay,
+  onTimeOfDayChange,
 }: ToolbarProps) {
   return (
     <div className="pointer-events-auto absolute top-4 left-4 flex min-w-[152px] flex-col gap-2.5 rounded-xl border border-white/[0.09] bg-black/[0.88] p-3 font-mono text-sm backdrop-blur-sm select-none">
@@ -160,6 +170,21 @@ export function Toolbar({
           </div>
         </div>
       )}
+
+      <Separator className="bg-white/[0.08]" />
+
+      {/* Time of day */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] text-white/35">Time — {formatHour(timeOfDay)}</span>
+        <Slider
+          min={0}
+          max={24}
+          step={0.1}
+          value={[timeOfDay]}
+          onValueChange={(vals) => onTimeOfDayChange(vals[0])}
+          className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
+        />
+      </div>
 
       {/* Keyboard / touch hints */}
       <p className="text-[10px] leading-relaxed text-white/22">

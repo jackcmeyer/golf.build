@@ -4,6 +4,13 @@ import { VoxelChunk } from './VoxelChunk'
 import { CHUNK_SIZE, CHUNK_HEIGHT, VOXEL_SIZE } from './constants'
 import { VoxelType, VOXEL_COLORS } from '../voxelTypes'
 
+const WATER_TYPES = new Set<number>([
+  VoxelType.STILL_WATER,
+  VoxelType.MOVING_WATER,
+  VoxelType.OCEAN,
+  VoxelType.MARSH,
+])
+
 // Face definitions — corners in CCW winding when viewed from the face's normal direction.
 // Each corner is [x, y, z] offset within a unit voxel [0,1]^3.
 // Indices per face: [0, 2, 1, 1, 2, 3] — two CCW triangles.
@@ -110,6 +117,9 @@ export function buildChunkGeometry(
         const [r, g, b] = hexToRgb(hexColor)
 
         for (const face of faces) {
+          // Water top faces are rendered by the water mesh with an animated shader
+          if (WATER_TYPES.has(type) && face.dir[1] === 1) continue
+
           const [dx, dy, dz] = face.dir
           const neighborType = world.getVoxelType(
             worldOffsetX + lx + dx,
@@ -141,5 +151,48 @@ export function buildChunkGeometry(
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   geo.setIndex(indices)
 
+  return geo
+}
+
+// Returns geometry for only the top (+Y) faces of water voxels.
+// These go into a separate mesh with the animated water ShaderMaterial.
+export function buildWaterGeometry(
+  chunk: VoxelChunk,
+  world: VoxelWorld,
+  cx: number,
+  cz: number,
+): THREE.BufferGeometry {
+  const positions: number[] = []
+  const normals: number[] = []
+  const indices: number[] = []
+
+  const worldOffsetX = cx * CHUNK_SIZE
+  const worldOffsetZ = cz * CHUNK_SIZE
+  const topFace = FACE_DEFS[3] // +Y
+
+  for (let ly = 0; ly < CHUNK_HEIGHT; ly++) {
+    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        const type = chunk.getType(lx, ly, lz)
+        if (!WATER_TYPES.has(type)) continue
+
+        const neighborType = world.getVoxelType(worldOffsetX + lx, ly + 1, worldOffsetZ + lz)
+        if (neighborType !== VoxelType.AIR) continue
+
+        const ndx = positions.length / 3
+        for (const [vx, vy, vz] of topFace.corners) {
+          positions.push((lx + vx) * VOXEL_SIZE, (ly + vy) * VOXEL_SIZE, (lz + vz) * VOXEL_SIZE)
+          normals.push(...topFace.normal)
+        }
+        indices.push(ndx, ndx + 1, ndx + 2, ndx + 1, ndx + 3, ndx + 2)
+      }
+    }
+  }
+
+  const geo = new THREE.BufferGeometry()
+  if (positions.length === 0) return geo
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
+  geo.setIndex(indices)
   return geo
 }
