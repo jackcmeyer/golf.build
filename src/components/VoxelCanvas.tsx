@@ -5,8 +5,10 @@ import { VoxelWorld } from '../engine/VoxelWorld'
 import { buildChunkGeometry } from '../engine/ChunkMeshBuilder'
 import { initWorld } from '../engine/worldInit'
 import {
-  VOXEL_SIZE, CHUNK_SIZE,
-  WORLD_WIDTH_VOXELS, WORLD_DEPTH_VOXELS,
+  VOXEL_SIZE,
+  CHUNK_SIZE,
+  WORLD_WIDTH_VOXELS,
+  WORLD_DEPTH_VOXELS,
   CHUNK_HEIGHT,
 } from '../engine/constants'
 import { ToolMode, getColumnsInRadius } from '../engine/toolUtils'
@@ -48,9 +50,15 @@ export default function VoxelCanvas() {
   const toolRef = useRef(toolMode)
   const brushRef = useRef(brushSize)
   const surfaceRef = useRef(selectedSurface)
-  useEffect(() => { toolRef.current = toolMode }, [toolMode])
-  useEffect(() => { brushRef.current = brushSize }, [brushSize])
-  useEffect(() => { surfaceRef.current = selectedSurface }, [selectedSurface])
+  useEffect(() => {
+    toolRef.current = toolMode
+  }, [toolMode])
+  useEffect(() => {
+    brushRef.current = brushSize
+  }, [brushSize])
+  useEffect(() => {
+    surfaceRef.current = selectedSurface
+  }, [selectedSurface])
 
   // Swap OrbitControls touch/mouse config when the active tool changes.
   // Orbit mode: 1-finger rotates, left-click rotates.
@@ -59,11 +67,19 @@ export default function VoxelCanvas() {
     const c = controlsRef.current
     if (!c) return
     if (toolMode === 'orbit') {
-      c.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }
-      c.touches   = { ONE: THREE.TOUCH.ROTATE,   TWO: THREE.TOUCH.DOLLY_PAN }
+      c.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN,
+      }
+      c.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }
     } else {
-      c.mouseButtons = { LEFT: null as unknown as THREE.MOUSE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
-      c.touches   = { ONE: undefined as unknown as THREE.TOUCH, TWO: THREE.TOUCH.DOLLY_PAN }
+      c.mouseButtons = {
+        LEFT: null as unknown as THREE.MOUSE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.ROTATE,
+      }
+      c.touches = { ONE: undefined as unknown as THREE.TOUCH, TWO: THREE.TOUCH.DOLLY_PAN }
     }
   }, [toolMode])
 
@@ -102,7 +118,11 @@ export default function VoxelCanvas() {
     controls.maxPolarAngle = Math.PI / 2.08
     // Initial config: sculpt tools active, so left/1-finger = tool (not orbit).
     // The toolMode useEffect will update this whenever the active mode changes.
-    controls.mouseButtons = { LEFT: null as unknown as THREE.MOUSE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
+    controls.mouseButtons = {
+      LEFT: null as unknown as THREE.MOUSE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.ROTATE,
+    }
     controls.touches = { ONE: undefined as unknown as THREE.TOUCH, TWO: THREE.TOUCH.DOLLY_PAN }
     controlsRef.current = controls
 
@@ -116,7 +136,10 @@ export default function VoxelCanvas() {
     sun.shadow.camera.near = 1
     sun.shadow.camera.far = 600
     const sc = sun.shadow.camera as THREE.OrthographicCamera
-    sc.left = -300; sc.right = 300; sc.top = 300; sc.bottom = -300
+    sc.left = -300
+    sc.right = 300
+    sc.top = 300
+    sc.bottom = -300
     sun.shadow.bias = -0.0005
     scene.add(sun)
 
@@ -246,11 +269,15 @@ export default function VoxelCanvas() {
           }
         }
         for (const [x, z] of cols) {
-          let sum = 0, count = 0
+          let sum = 0,
+            count = 0
           for (let dx = -1; dx <= 1; dx++) {
             for (let dz = -1; dz <= 1; dz++) {
               const h2 = snap.get(`${x + dx},${z + dz}`) ?? -1
-              if (h2 >= 0) { sum += h2; count++ }
+              if (h2 >= 0) {
+                sum += h2
+                count++
+              }
             }
           }
           if (count === 0) continue
@@ -274,7 +301,7 @@ export default function VoxelCanvas() {
 
     function onPointerDown(e: PointerEvent) {
       if (e.button !== 0) return
-      if (toolRef.current === 'orbit') return  // let OrbitControls own this gesture
+      if (toolRef.current === 'orbit') return // let OrbitControls own this gesture
       isLeftDown = true
       container.setPointerCapture(e.pointerId)
       const hit = worldCoordsFromHit(e)

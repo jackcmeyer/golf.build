@@ -8,27 +8,81 @@ import { VoxelType, VOXEL_COLORS } from '../voxelTypes'
 // Each corner is [x, y, z] offset within a unit voxel [0,1]^3.
 // Indices per face: [0, 2, 1, 1, 2, 3] — two CCW triangles.
 const FACE_DEFS = [
-  { dir: [-1,  0,  0] as const, normal: [-1, 0,  0] as const, bright: 0.72,
-    corners: [[0,1,0],[0,0,0],[0,1,1],[0,0,1]] as [number,number,number][] },
-  { dir: [ 1,  0,  0] as const, normal: [ 1, 0,  0] as const, bright: 0.72,
-    corners: [[1,1,1],[1,0,1],[1,1,0],[1,0,0]] as [number,number,number][] },
-  { dir: [ 0, -1,  0] as const, normal: [ 0,-1,  0] as const, bright: 0.45,
-    corners: [[1,0,1],[0,0,1],[1,0,0],[0,0,0]] as [number,number,number][] },
-  { dir: [ 0,  1,  0] as const, normal: [ 0, 1,  0] as const, bright: 1.0,
-    corners: [[0,1,1],[1,1,1],[0,1,0],[1,1,0]] as [number,number,number][] },
-  { dir: [ 0,  0, -1] as const, normal: [ 0, 0, -1] as const, bright: 0.82,
-    corners: [[1,0,0],[0,0,0],[1,1,0],[0,1,0]] as [number,number,number][] },
-  { dir: [ 0,  0,  1] as const, normal: [ 0, 0,  1] as const, bright: 0.82,
-    corners: [[0,0,1],[1,0,1],[0,1,1],[1,1,1]] as [number,number,number][] },
+  {
+    dir: [-1, 0, 0] as const,
+    normal: [-1, 0, 0] as const,
+    bright: 0.72,
+    corners: [
+      [0, 1, 0],
+      [0, 0, 0],
+      [0, 1, 1],
+      [0, 0, 1],
+    ] as [number, number, number][],
+  },
+  {
+    dir: [1, 0, 0] as const,
+    normal: [1, 0, 0] as const,
+    bright: 0.72,
+    corners: [
+      [1, 1, 1],
+      [1, 0, 1],
+      [1, 1, 0],
+      [1, 0, 0],
+    ] as [number, number, number][],
+  },
+  {
+    dir: [0, -1, 0] as const,
+    normal: [0, -1, 0] as const,
+    bright: 0.45,
+    corners: [
+      [1, 0, 1],
+      [0, 0, 1],
+      [1, 0, 0],
+      [0, 0, 0],
+    ] as [number, number, number][],
+  },
+  {
+    dir: [0, 1, 0] as const,
+    normal: [0, 1, 0] as const,
+    bright: 1.0,
+    corners: [
+      [0, 1, 1],
+      [1, 1, 1],
+      [0, 1, 0],
+      [1, 1, 0],
+    ] as [number, number, number][],
+  },
+  {
+    dir: [0, 0, -1] as const,
+    normal: [0, 0, -1] as const,
+    bright: 0.82,
+    corners: [
+      [1, 0, 0],
+      [0, 0, 0],
+      [1, 1, 0],
+      [0, 1, 0],
+    ] as [number, number, number][],
+  },
+  {
+    dir: [0, 0, 1] as const,
+    normal: [0, 0, 1] as const,
+    bright: 0.82,
+    corners: [
+      [0, 0, 1],
+      [1, 0, 1],
+      [0, 1, 1],
+      [1, 1, 1],
+    ] as [number, number, number][],
+  },
 ]
 
 function hexToRgb(hex: number): [number, number, number] {
-  return [(hex >> 16 & 0xff) / 255, (hex >> 8 & 0xff) / 255, (hex & 0xff) / 255]
+  return [((hex >> 16) & 0xff) / 255, ((hex >> 8) & 0xff) / 255, (hex & 0xff) / 255]
 }
 
 // LOD 1 only renders the top (+Y) face — no vertical side faces.
 // This cuts geometry by ~5x for distant chunks while preserving the top surface.
-const TOP_FACE_ONLY = [FACE_DEFS[3]]  // index 3 = +Y
+const TOP_FACE_ONLY = [FACE_DEFS[3]] // index 3 = +Y
 
 export function buildChunkGeometry(
   chunk: VoxelChunk,

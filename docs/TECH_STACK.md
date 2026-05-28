@@ -2,35 +2,38 @@
 
 ## Stack
 
-| Layer | Technology | Notes |
-|-------|-----------|-------|
-| Frontend | Vite | Build tooling |
-| 3D rendering | Three.js | Voxel engine, cameras, LOD, shaders, shadows, wind |
-| Backend | Supabase | DB, auth, storage, real-time (future) |
-| Hosting | Vercel | Web deployment + CI/CD |
-| Payments | Stripe | One-time purchase |
-| Desktop | Electron | Native wrapper (later phase) |
-| AI — Phase 2 | MCP server | Agent interface for AI-assisted building |
-| Import — future | Maps Elevation API | Real terrain pipeline (Mode 3) |
+| Layer           | Technology         | Notes                                              |
+| --------------- | ------------------ | -------------------------------------------------- |
+| Frontend        | Vite               | Build tooling                                      |
+| 3D rendering    | Three.js           | Voxel engine, cameras, LOD, shaders, shadows, wind |
+| Backend         | Supabase           | DB, auth, storage, real-time (future)              |
+| Hosting         | Vercel             | Web deployment + CI/CD                             |
+| Payments        | Stripe             | One-time purchase                                  |
+| Desktop         | Electron           | Native wrapper (later phase)                       |
+| AI — Phase 2    | MCP server         | Agent interface for AI-assisted building           |
+| Import — future | Maps Elevation API | Real terrain pipeline (Mode 3)                     |
 
 ## Voxel grid
 
 ### Core specification
+
 - **Voxel size**: 1 voxel = 2m × 2m × 2m — cubic, uniform, no non-square voxels
 - **Canvas size**: 1,024 × 1,024 × 64 voxels (~520 acres, covers any real-world golf club)
 - **Chunk size**: 32 × 32 × 64 voxels per chunk (1,024 chunks total for full canvas)
 - **Default blank canvas**: 200 × 200 (expandable to 1,024 × 1,024 on demand)
 
 ### Scale reference
-| Feature | Real size | Voxels |
-|---------|-----------|--------|
-| Green | ~30m × 30m | ~15 × 15 |
-| Tee box | ~5m × 10m | ~3 × 5 |
-| Fairway width | ~30–50m | ~15–25 |
-| Par 4 length | ~300–400m | ~150–200 |
+
+| Feature             | Real size  | Voxels     |
+| ------------------- | ---------- | ---------- |
+| Green               | ~30m × 30m | ~15 × 15   |
+| Tee box             | ~5m × 10m  | ~3 × 5     |
+| Fairway width       | ~30–50m    | ~15–25     |
+| Par 4 length        | ~300–400m  | ~150–200   |
 | Full 18-hole course | ~400 acres | ~820 × 820 |
 
 ### Why 2m?
+
 - Proportionally true to golf at a charming scale
 - Green is ~15×15 voxels — enough to sculpt character without pixel-hunting
 - A par 4 feels like a par 4 in walk mode
@@ -39,7 +42,9 @@
 ## Voxel state model
 
 ### In-memory representation
+
 Each voxel is stored as two bytes in a typed array:
+
 - **Byte 1**: `type` — surface material enum (0–255)
 - **Byte 2**: `variant` — visual variant or metadata
 
@@ -54,6 +59,7 @@ function getIndex(x: number, y: number, z: number): number {
 ```
 
 ### Surface material enum (type byte)
+
 ```typescript
 enum VoxelType {
   AIR = 0,
@@ -150,6 +156,7 @@ CREATE TABLE courses (
 ```
 
 ### RLE compression
+
 Golf terrain is naturally repetitive (large areas of identical surface type). Expected compression ratio: 10–50x.
 
 ```typescript
@@ -182,6 +189,7 @@ function rleDecode(data: Uint8Array): Uint8Array {
 ## Three.js architecture
 
 ### Camera rigs
+
 Two completely separate camera systems:
 
 ```typescript
@@ -197,6 +205,7 @@ const walkCamera = new THREE.PerspectiveCamera(75, aspect, 0.1, 2000)
 ```
 
 ### Rendering pipeline
+
 1. Chunked geometry — one merged BufferGeometry per visible chunk
 2. LOD — full detail within 200m, simplified beyond
 3. Cel-shading — flat face normals + outline edge detection pass
@@ -205,6 +214,7 @@ const walkCamera = new THREE.PerspectiveCamera(75, aspect, 0.1, 2000)
 6. Wind shader — global uniform driving vertex animation
 
 ### Global wind uniform
+
 ```glsl
 // Passed to all shaders that need wind
 uniform vec2 uWindDirection; // normalized direction
@@ -214,21 +224,23 @@ uniform float uTime;         // elapsed time for animation
 
 ## Rendering performance targets
 
-| Scenario | Target |
-|----------|--------|
-| Orbital view, full 1,024×1,024 canvas | 60fps |
-| Walk mode, near chunks full detail | 60fps |
-| Shadow map objects | Max 200 dynamic shadow casters |
-| Chunk rebuild on sculpt | <16ms (single frame) |
+| Scenario                              | Target                         |
+| ------------------------------------- | ------------------------------ |
+| Orbital view, full 1,024×1,024 canvas | 60fps                          |
+| Walk mode, near chunks full detail    | 60fps                          |
+| Shadow map objects                    | Max 200 dynamic shadow casters |
+| Chunk rebuild on sculpt               | <16ms (single frame)           |
 
 ## MCP compatibility (Phase 2)
 
 The object store design is MCP-ready from day one:
+
 - Objects addressable by `{type, x, y, z}` without decode step
 - Terrain addressable by `{chunk_x, chunk_z}` → decode → `{x, y, z, type}`
 - Course metadata queryable via Supabase REST API
 
 Agent-facing operations will include:
+
 - `place_object(type, x, y, z, rotation, variant)`
 - `paint_surface(x, z, radius, surface_type)`
 - `sculpt_terrain(x, z, radius, delta_y)`

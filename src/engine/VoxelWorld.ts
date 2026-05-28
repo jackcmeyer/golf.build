@@ -33,9 +33,12 @@ export class VoxelWorld {
 
   inBounds(wx: number, wy: number, wz: number): boolean {
     return (
-      wx >= 0 && wx < this.widthInVoxels &&
-      wy >= 0 && wy < CHUNK_HEIGHT &&
-      wz >= 0 && wz < this.depthInVoxels
+      wx >= 0 &&
+      wx < this.widthInVoxels &&
+      wy >= 0 &&
+      wy < CHUNK_HEIGHT &&
+      wz >= 0 &&
+      wz < this.depthInVoxels
     )
   }
 

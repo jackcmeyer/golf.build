@@ -21,8 +21,8 @@ function surfaceTypeAt(wx: number, wz: number, W: number, D: number): VoxelType 
   if (hz >= 0.22 && hz <= 0.38 && Math.abs(hx) < 0.07) return VoxelType.GREEN_GRASS
 
   // Bunkers flanking green
-  if (hz >= 0.20 && hz <= 0.38 && hx >= 0.07 && hx <= 0.15) return VoxelType.BUNKER_SAND_WHITE
-  if (hz >= 0.20 && hz <= 0.38 && hx >= -0.15 && hx <= -0.07) return VoxelType.BUNKER_SAND_WHITE
+  if (hz >= 0.2 && hz <= 0.38 && hx >= 0.07 && hx <= 0.15) return VoxelType.BUNKER_SAND_WHITE
+  if (hz >= 0.2 && hz <= 0.38 && hx >= -0.15 && hx <= -0.07) return VoxelType.BUNKER_SAND_WHITE
 
   // Tee box
   if (hz <= -0.33 && hz >= -0.42 && Math.abs(hx) < 0.05) return VoxelType.TEE_GRASS
@@ -38,10 +38,10 @@ function surfaceTypeAt(wx: number, wz: number, W: number, D: number): VoxelType 
   if (hz >= -0.05 && hz <= 0.18 && hx >= -0.32 && hx <= -0.16) return VoxelType.STILL_WATER
 
   // Cart path — right side of fairway
-  if (hz >= -0.20 && hz <= 0.22 && hx >= 0.17 && hx <= 0.20) return VoxelType.CART_PATH_CONCRETE
+  if (hz >= -0.2 && hz <= 0.22 && hx >= 0.17 && hx <= 0.2) return VoxelType.CART_PATH_CONCRETE
 
   // Heather — far rough, links feel
-  if (Math.abs(hx) > 0.32 || hz < -0.44 || hz > 0.40) return VoxelType.HEATHER
+  if (Math.abs(hx) > 0.32 || hz < -0.44 || hz > 0.4) return VoxelType.HEATHER
 
   // Intermediate rough bordering fairway
   const iBias = Math.max(0, (hz + 0.1) * 0.15)

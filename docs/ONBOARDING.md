@@ -17,6 +17,7 @@ User picks a terrain style preset, then the generator creates a starting canvas.
 ### Terrain style presets (v1 — 4 presets)
 
 #### Links
+
 - Reference courses: Ballybunion, Carnoustie, St Andrews
 - Terrain: Flat to gently rolling, very low elevation variance
 - Vegetation: Sparse — mostly fescue, some lone trees
@@ -25,6 +26,7 @@ User picks a terrain style preset, then the generator creates a starting canvas.
 - Feel: Exposed, windswept, ancient
 
 #### Parkland
+
 - Reference courses: Augusta National, Winged Foot, Muirfield Village
 - Terrain: Rolling hills, moderate elevation variance
 - Vegetation: Dense tree lines (oak, deciduous), manicured
@@ -33,6 +35,7 @@ User picks a terrain style preset, then the generator creates a starting canvas.
 - Feel: Beautiful, cultivated, classic American
 
 #### Wooded
+
 - Reference courses: Pinehurst No. 2, Bethpage Black, Augusta (back 9)
 - Terrain: Tight corridors, moderate-high elevation
 - Vegetation: Heavily forested (pine, conifer), pine straw everywhere
@@ -41,6 +44,7 @@ User picks a terrain style preset, then the generator creates a starting canvas.
 - Feel: Dense, dramatic, penal
 
 #### Coastal
+
 - Reference courses: Pebble Beach, Cape Kidnappers, Old Head
 - Terrain: High elevation drama, dramatic drops, cliff edges
 - Vegetation: Sparse — wind-swept, rocky outcrops
@@ -49,6 +53,7 @@ User picks a terrain style preset, then the generator creates a starting canvas.
 - Feel: Dramatic, spectacular, death-or-glory
 
 ### v1.1 addition: Mountain
+
 - Reference courses: Banff Springs, The Broadmoor, Keystone Ranch
 - Terrain: Severe elevation changes, rocky terrain
 - Vegetation: Sparse at altitude, pine at lower elevations
@@ -56,18 +61,19 @@ User picks a terrain style preset, then the generator creates a starting canvas.
 - Feel: Majestic, challenging, elevation-heavy
 
 ### Terrain generator parameters per preset
+
 ```typescript
 interface TerrainPresetConfig {
-  elevationVariance: number      // 0.0 (flat) - 1.0 (dramatic)
-  treeDensity: number            // 0.0 (sparse) - 1.0 (dense)
-  treeTypes: ObjectType[]        // which tree types to scatter
-  primaryGrass: VoxelType        // dominant surface material
-  secondaryGrass: VoxelType      // secondary surface material
-  fescueCoverage: number         // 0.0 - 1.0
-  waterLikelihood: number        // 0.0 - 1.0
-  rockFrequency: number          // 0.0 - 1.0
-  noiseScale: number             // Perlin noise frequency
-  noiseOctaves: number           // detail layers
+  elevationVariance: number // 0.0 (flat) - 1.0 (dramatic)
+  treeDensity: number // 0.0 (sparse) - 1.0 (dense)
+  treeTypes: ObjectType[] // which tree types to scatter
+  primaryGrass: VoxelType // dominant surface material
+  secondaryGrass: VoxelType // secondary surface material
+  fescueCoverage: number // 0.0 - 1.0
+  waterLikelihood: number // 0.0 - 1.0
+  rockFrequency: number // 0.0 - 1.0
+  noiseScale: number // Perlin noise frequency
+  noiseOctaves: number // detail layers
 }
 
 const LINKS: TerrainPresetConfig = {
@@ -80,12 +86,14 @@ const LINKS: TerrainPresetConfig = {
   waterLikelihood: 0.2,
   rockFrequency: 0.1,
   noiseScale: 0.008,
-  noiseOctaves: 3
+  noiseOctaves: 3,
 }
 ```
 
 ### Future: generative sliders
+
 Post-v1, expose these parameters as UI sliders so users can customize their random plot:
+
 - Elevation variance
 - Tree density
 - Water presence
@@ -164,14 +172,17 @@ First-person free roam at real scale. No game logic, no score. The architect's d
 **"Start from beginning or start from slide"** — like PowerPoint.
 
 **Default entry** (start from beginning):
+
 - Drops in at the first tee box (determined by the first placed tee marker)
 - If no tee marker placed, drops in at canvas center at terrain surface
 
 **Click-to-drop** (start from slide):
+
 - In orbital view, user can click any point on the course
 - Camera descends to that exact point
 
 **Transition animation** (2–3 seconds):
+
 1. Orbital camera smoothly tilts from isometric angle toward level horizon
 2. Camera begins pulling toward the entry point — voxels growing in size
 3. Sky fills the top of the frame
@@ -203,6 +214,7 @@ async function transitionToWalkMode(entryPoint: THREE.Vector3) {
 ```
 
 **Reverse transition** (walk → orbital):
+
 - Press Escape
 - Camera lifts from current position back to orbital
 - Orbital view re-centers on the position the player was standing

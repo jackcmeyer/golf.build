@@ -15,6 +15,7 @@ Price target: **~$15–20**. Refine post-launch based on user feedback and conve
 The core creative loop is fully unlocked. The goal is to give users enough to fall in love with the product — specifically the terrain sculpting + walk mode combo.
 
 ### What's included in demo
+
 - Terrain sculpting tools (full)
 - Surface painting tools (all 37 materials)
 - Orbital view (full)
@@ -27,6 +28,7 @@ The core creative loop is fully unlocked. The goal is to give users enough to fa
 - **9-hole canvas limit** (200×200 grid, locked)
 
 ### What's gated behind purchase
+
 - Full 1,024×1,024 canvas (expandable from 200×200)
 - Unlimited saved projects
 - Gallery publishing
@@ -36,6 +38,7 @@ The core creative loop is fully unlocked. The goal is to give users enough to fa
 - Social share cards
 
 ### Demo gate enforcement
+
 - Canvas size: enforce 200×200 max, disable expansion UI
 - Object palette: show bucket 2 objects as locked/greyed with "upgrade" tooltip
 - Gallery publish button: disabled with upgrade prompt
@@ -46,12 +49,14 @@ The core creative loop is fully unlocked. The goal is to give users enough to fa
 ## Full purchase
 
 ### Stripe integration
+
 - One-time payment via Stripe Checkout
 - Webhook on `checkout.session.completed` → set `user.is_paid = true` in Supabase
 - No recurring billing, no seat licenses
 - Access is tied to user account (not device)
 
 ### Purchase flow
+
 1. User hits a paywall (publish button, large canvas, locked object)
 2. Modal explains what they unlock
 3. "Unlock golf.build — $[price]" button
@@ -60,6 +65,7 @@ The core creative loop is fully unlocked. The goal is to give users enough to fa
 6. User redirected back, access unlocked immediately
 
 ### Supabase user metadata
+
 ```sql
 ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS raw_user_meta_data jsonb;
 -- Or use a profiles table:
@@ -75,29 +81,35 @@ CREATE TABLE profiles (
 
 ## Club identity
 
-Club identity is the emotional core of the paid purchase. The moment someone names their club and sees their logo on the flagstick — that's when it becomes *their* golf club.
+Club identity is the emotional core of the paid purchase. The moment someone names their club and sees their logo on the flagstick — that's when it becomes _their_ golf club.
 
 ### Club name
+
 - Free text input — any name
 - Displayed on gallery card, share cards, and in-game signage
 - Stored in `courses.club_name`
 
 ### Club logo
+
 Two paths:
 
 **Upload**
+
 - User uploads PNG/SVG
 - Stored in Supabase storage at `clubs/{course_id}/logo.png`
 - Max 2MB, square recommended
 
 **AI generation**
+
 - Text prompt: "crest for Lakeview Golf Club, links-style, navy and gold"
 - Style presets: classic crest / minimalist wordmark / vintage badge
 - Calls image generation API (TBD — Replicate/Fal/OpenAI)
 - Generated image stored same as upload
 
 ### Logo placement
+
 Club logo is a texture applied to specific object types:
+
 - Flagstick flag face
 - Entrance gate sign face
 - Scoreboard face
@@ -123,10 +135,12 @@ function applyClubLogo(logoUrl: string) {
 ## Social sharing
 
 ### Philosophy
+
 No video or GIF export. Every share format resolves to a live page on golf.build.
 Shares are acquisition channels, not dead-end files.
 
 ### Static course share card
+
 - "Share" button in orbital view
 - Generates a shareable URL: `golf.build/course/{id}`
 - Page renders as an Open Graph card:
@@ -137,6 +151,7 @@ Shares are acquisition channels, not dead-end files.
 - Works on Twitter/X, iMessage, Slack, etc.
 
 ### Timelapse share link
+
 - Separate "Share timelapse" button
 - URL: `golf.build/course/{id}?timelapse=true`
 - Page auto-plays the day cycle on load
@@ -144,13 +159,16 @@ Shares are acquisition channels, not dead-end files.
 - Recipients see the product in motion before signing up
 
 ### Gallery card
+
 Each published course in the community gallery shows:
+
 - Orbital screenshot thumbnail (at the time of day it was published)
 - Club name + creator handle
 - Publish date
 - Click → full course view page
 
 ### Share card capture
+
 ```typescript
 function captureOrbitalScreenshot(): string {
   // Render one frame at target time of day
@@ -158,4 +176,5 @@ function captureOrbitalScreenshot(): string {
   return renderer.domElement.toDataURL('image/jpeg', 0.85)
 }
 ```
+
 Upload to Supabase storage, save URL to `courses.thumbnail_url`.
