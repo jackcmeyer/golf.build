@@ -1316,7 +1316,40 @@ export default function VoxelCanvas({
     }
     animate()
 
+    function triggerSave() {
+      const id = courseIdRef.current
+      if (!id || lastMutationTimeRef.current === 0 || isSavingRef.current) return
+      isSavingRef.current = true
+      lastMutationTimeRef.current = 0
+      onSaveStatusRef.current?.('saving')
+      const saveFunc = hasSessionRef.current ? saveCourse : saveLocalCourse
+      saveFunc(id, world, objectManager)
+        .then(() => {
+          onSaveStatusRef.current?.('saved')
+          isSavingRef.current = false
+        })
+        .catch(() => {
+          onSaveStatusRef.current?.('error')
+          isSavingRef.current = false
+        })
+    }
+
+    function onVisibilityChange() {
+      if (document.visibilityState === 'hidden') triggerSave()
+    }
+
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      if (lastMutationTimeRef.current > 0) {
+        e.preventDefault()
+      }
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('beforeunload', onBeforeUnload)
+
     return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('beforeunload', onBeforeUnload)
       worldRef.current = null
       objectManagerRef.current = null
       addObjectMeshRef.current = null
