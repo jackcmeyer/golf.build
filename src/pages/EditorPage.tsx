@@ -1,0 +1,200 @@
+import { useEffect, useRef, useState } from 'react'
+import { useParams, useNavigate } from '@tanstack/react-router'
+import VoxelCanvas, { type SaveStatus } from '../components/VoxelCanvas'
+import { OnboardingModal } from '../components/OnboardingModal'
+import { supabase } from '../lib/supabase'
+import type { TerrainPreset } from '../engine/terrainPresets'
+
+type PageState = 'loading' | 'onboarding' | 'ready'
+
+export function EditorPage() {
+  const { courseId } = useParams({ strict: false })
+  const navigate = useNavigate()
+
+  const [pageState, setPageState] = useState<PageState>(courseId ? 'ready' : 'loading')
+  const [userId, setUserId] = useState<string | null>(null)
+  const [guestPreset, setGuestPreset] = useState<TerrainPreset>('default')
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const [isPublished, setIsPublished] = useState(false)
+  const screenshotCbRef = useRef<(() => Promise<Blob | null>) | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function init() {
+      if (courseId) {
+        setPageState('ready')
+        if (!supabase) return
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (!cancelled) setUserId(session?.user.id ?? null)
+        return
+      }
+
+      setPageState('loading')
+      if (!supabase) {
+        setPageState('onboarding')
+        return
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (cancelled) return
+      setUserId(session?.user.id ?? null)
+      if (!session || !supabase) {
+        setPageState('onboarding')
+        return
+      }
+
+      const { data } = await supabase
+        .from('courses')
+        .select('id')
+        .eq('user_id', session.user.id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single()
+      if (cancelled) return
+      if (data?.id) {
+        navigate({ to: '/editor/$courseId', params: { courseId: data.id } })
+      } else {
+        setPageState('onboarding')
+      }
+    }
+
+    init()
+    return () => {
+      cancelled = true
+    }
+  }, [courseId, navigate])
+
+  useEffect(() => {
+    async function loadPublished() {
+      if (!courseId || !supabase) {
+        setIsPublished(false)
+        return
+      }
+      const { data } = await supabase
+        .from('courses')
+        .select('is_published')
+        .eq('id', courseId)
+        .single()
+      setIsPublished(data?.is_published ?? false)
+    }
+    loadPublished()
+  }, [courseId])
+
+  async function handlePublishToggle() {
+    if (!courseId || !supabase) return
+    const newVal = !isPublished
+    if (newVal && screenshotCbRef.current) {
+      const blob = await screenshotCbRef.current()
+      if (blob) {
+        const path = `${courseId}.jpg`
+        await supabase.storage.from('thumbnails').upload(path, blob, {
+          contentType: 'image/jpeg',
+          upsert: true,
+        })
+        const { data: urlData } = supabase.storage.from('thumbnails').getPublicUrl(path)
+        await supabase
+          .from('courses')
+          .update({ is_published: newVal, thumbnail_url: urlData.publicUrl })
+          .eq('id', courseId)
+      } else {
+        await supabase.from('courses').update({ is_published: newVal }).eq('id', courseId)
+      }
+    } else {
+      await supabase.from('courses').update({ is_published: newVal }).eq('id', courseId)
+    }
+    setIsPublished(newVal)
+  }
+
+  function handleOnboardingCreate(newCourseId: string, preset: TerrainPreset) {
+    setPageState('ready')
+    if (newCourseId) {
+      navigate({ to: '/editor/$courseId', params: { courseId: newCourseId } })
+    } else {
+      setGuestPreset(preset)
+    }
+  }
+
+  const ghostBtn: React.CSSProperties = {
+    background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.07)',
+    borderRadius: 6,
+    color: 'rgba(255,255,255,0.25)',
+    fontFamily: 'monospace',
+    fontSize: 11,
+    padding: '5px 12px',
+    cursor: 'pointer',
+  }
+
+  return (
+    <>
+      {pageState === 'ready' && (
+        <VoxelCanvas
+          key={courseId ?? 'guest'}
+          courseId={courseId ?? null}
+          initialPreset={courseId ? undefined : guestPreset}
+          readOnly={false}
+          screenshotCbRef={screenshotCbRef}
+          onSaveStatus={setSaveStatus}
+        />
+      )}
+
+      {courseId && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 16,
+            right: 16,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            zIndex: 50,
+          }}
+        >
+          {saveStatus === 'saving' && (
+            <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>
+              saving…
+            </span>
+          )}
+          {saveStatus === 'saved' && (
+            <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(134,239,172,0.5)' }}>
+              saved
+            </span>
+          )}
+          {saveStatus === 'error' && (
+            <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(239,68,68,0.7)' }}>
+              save failed
+            </span>
+          )}
+          <button
+            onClick={handlePublishToggle}
+            style={{
+              ...ghostBtn,
+              ...(isPublished
+                ? {
+                    color: 'rgba(134,239,172,0.85)',
+                    borderColor: 'rgba(34,197,94,0.3)',
+                    background: 'rgba(34,197,94,0.12)',
+                  }
+                : {}),
+            }}
+          >
+            {isPublished ? 'Published' : 'Publish'}
+          </button>
+        </div>
+      )}
+
+      {pageState === 'onboarding' && (
+        <OnboardingModal
+          userId={userId}
+          onCreate={handleOnboardingCreate}
+          onClose={() => setPageState('ready')}
+        />
+      )}
+    </>
+  )
+}

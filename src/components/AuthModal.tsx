@@ -6,12 +6,10 @@ interface Props {
 }
 
 export function AuthModal({ onClose }: Props) {
-  const [tab, setTab] = useState<'signin' | 'signup'>('signin')
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [done, setDone] = useState(false)
+  const [sent, setSent] = useState(false)
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -19,15 +17,9 @@ export function AuthModal({ onClose }: Props) {
     setError(null)
     setLoading(true)
     try {
-      if (tab === 'signin') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
-        if (error) throw error
-        onClose()
-      } else {
-        const { error } = await supabase.auth.signUp({ email, password })
-        if (error) throw error
-        setDone(true)
-      }
+      const { error } = await supabase.auth.signInWithOtp({ email })
+      if (error) throw error
+      setSent(true)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -73,11 +65,11 @@ export function AuthModal({ onClose }: Props) {
           color: 'rgba(255,255,255,0.8)',
         }}
       >
-        {done ? (
+        {sent ? (
           <div style={{ textAlign: 'center', lineHeight: 2 }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Check your email</div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
-              A confirmation link has been sent to {email}.
+              A sign-in link has been sent to {email}.
             </div>
             <button
               onClick={onClose}
@@ -99,41 +91,9 @@ export function AuthModal({ onClose }: Props) {
           </div>
         ) : (
           <>
-            {/* Tab switcher */}
-            <div
-              style={{
-                display: 'flex',
-                gap: 0,
-                marginBottom: 20,
-                borderBottom: '1px solid rgba(255,255,255,0.08)',
-              }}
-            >
-              {(['signin', 'signup'] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => {
-                    setTab(t)
-                    setError(null)
-                  }}
-                  style={{
-                    flex: 1,
-                    background: 'transparent',
-                    border: 'none',
-                    borderBottom:
-                      tab === t ? '2px solid rgba(134,239,172,0.7)' : '2px solid transparent',
-                    color: tab === t ? 'rgba(134,239,172,0.9)' : 'rgba(255,255,255,0.3)',
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                    fontWeight: tab === t ? 600 : 400,
-                    padding: '6px 0 10px',
-                    cursor: 'pointer',
-                    letterSpacing: '0.04em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {t === 'signin' ? 'Sign in' : 'Sign up'}
-                </button>
-              ))}
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Sign in</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 20 }}>
+              We'll send a magic link to your email.
             </div>
 
             <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -148,24 +108,9 @@ export function AuthModal({ onClose }: Props) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  autoFocus
                   style={inputStyle}
                   placeholder="you@example.com"
-                />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label
-                  style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.05em' }}
-                >
-                  PASSWORD
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={6}
-                  style={inputStyle}
-                  placeholder="••••••"
                 />
               </div>
 
@@ -192,7 +137,7 @@ export function AuthModal({ onClose }: Props) {
                   letterSpacing: '0.04em',
                 }}
               >
-                {loading ? '...' : tab === 'signin' ? 'Sign in' : 'Create account'}
+                {loading ? '...' : 'Send magic link'}
               </button>
             </form>
           </>

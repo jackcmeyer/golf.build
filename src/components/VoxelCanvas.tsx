@@ -28,7 +28,8 @@ import { ObjectManager, CourseObject } from '../engine/ObjectManager'
 import { createObjectMesh, updateWindMaterials, buildGolfer } from '../engine/ObjectMeshFactory'
 import { Gizmo } from '../engine/Gizmo'
 import { WalkController } from '../engine/WalkController'
-import { saveCourse, loadCourseData } from '../lib/persistence'
+import { saveCourse, saveLocalCourse, loadCourseData, loadLocalCourse } from '../lib/persistence'
+import { supabase } from '../lib/supabase'
 import { initTerrain, type TerrainPreset } from '../engine/terrainPresets'
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
@@ -90,6 +91,7 @@ export default function VoxelCanvas({
   const isSavingRef = useRef(false)
   const courseIdRef = useRef<string | null>(null)
   const onSaveStatusRef = useRef(onSaveStatus)
+  const hasSessionRef = useRef(false)
 
   const [toolMode, setToolMode] = useState<ToolMode>('raise')
   const [brushSize, setBrushSize] = useState(3)
@@ -154,11 +156,28 @@ export default function VoxelCanvas({
     onSaveStatusRef.current = onSaveStatus
   }, [onSaveStatus])
 
+  // Track auth state so the animate loop can route saves without a closure
+  useEffect(() => {
+    if (!supabase) return
+    supabase.auth.getSession().then(({ data }) => {
+      hasSessionRef.current = !!data.session
+    })
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      hasSessionRef.current = !!session
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
   // Load course data when courseId becomes available
   useEffect(() => {
     if (!courseId) return
-    loadCourseData(courseId)
-      .then(({ chunks, objects }) => {
+    const loader = hasSessionRef.current ? loadCourseData : loadLocalCourse
+    loader(courseId)
+      .then((result) => {
+        if (!result) return // no local data yet — fresh canvas
+        const { chunks, objects } = result
         const world = worldRef.current
         const objectManager = objectManagerRef.current
         const addObjMesh = addObjectMeshRef.current
@@ -1107,7 +1126,8 @@ export default function VoxelCanvas({
         lastMutationTimeRef.current = 0
         const id = courseIdRef.current
         onSaveStatusRef.current?.('saving')
-        saveCourse(id, world, objectManager)
+        const saveFunc = hasSessionRef.current ? saveCourse : saveLocalCourse
+        saveFunc(id, world, objectManager)
           .then(() => {
             onSaveStatusRef.current?.('saved')
             isSavingRef.current = false

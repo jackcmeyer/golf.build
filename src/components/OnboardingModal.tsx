@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import type { TerrainPreset } from '../engine/terrainPresets'
 
 interface Props {
-  userId: string
+  userId: string | null
   onCreate: (courseId: string, preset: TerrainPreset) => void
   onClose: () => void
 }
@@ -41,16 +41,19 @@ export function OnboardingModal({ userId, onCreate, onClose }: Props) {
   const [creating, setCreating] = useState(false)
 
   async function handleCreate() {
-    if (!supabase || creating) return
-    setCreating(true)
+    if (creating) return
     const preset: TerrainPreset = mode === 'blank' ? 'blank' : selectedPreset
-    const { data } = await supabase
+    const courseId = crypto.randomUUID()
+    if (!supabase || !userId) {
+      onCreate(courseId, preset)
+      return
+    }
+    setCreating(true)
+    const { error } = await supabase
       .from('courses')
-      .insert({ user_id: userId, name: 'Untitled Course' })
-      .select('id')
-      .single()
+      .insert({ id: courseId, user_id: userId, name: 'Untitled Course' })
     setCreating(false)
-    if (data) onCreate(data.id, preset)
+    if (!error) onCreate(courseId, preset)
   }
 
   const modeBtn = (m: Mode, _label: string): React.CSSProperties => ({

@@ -1,7 +1,72 @@
+import { openDB } from 'idb'
 import { supabase } from './supabase'
 import { rleEncode, rleDecode } from './rle'
 import type { VoxelWorld } from '../engine/VoxelWorld'
 import type { ObjectManager } from '../engine/ObjectManager'
+
+export type RawObject = {
+  id: string
+  type: string
+  x: number
+  y: number
+  z: number
+  rotation: number
+}
+
+export type LoadedCourseData = {
+  chunks: Array<{ cx: number; cz: number; data: Uint8Array }>
+  objects: RawObject[]
+}
+
+// ── Local (IndexedDB) persistence ─────────────────────────────────────────────
+
+function getLocalDb() {
+  return openDB('golf_build', 1, {
+    upgrade(db) {
+      db.createObjectStore('courses')
+    },
+  })
+}
+
+export async function saveLocalCourse(
+  courseId: string,
+  world: VoxelWorld,
+  objectManager: ObjectManager,
+): Promise<void> {
+  const chunks: Array<{ cx: number; cz: number; data: Uint8Array }> = []
+  for (const [key, chunk] of world.chunks) {
+    const [cx, cz] = key.split(',').map(Number)
+    chunks.push({ cx, cz, data: rleEncode(chunk.data) })
+  }
+  const record = {
+    chunks,
+    objects: objectManager.getAll().map((obj) => ({
+      id: obj.id,
+      type: obj.type as string,
+      x: obj.position.x,
+      y: obj.position.y,
+      z: obj.position.z,
+      rotation: obj.rotation,
+    })),
+    updatedAt: new Date().toISOString(),
+  }
+  const db = await getLocalDb()
+  await db.put('courses', record, courseId)
+}
+
+export async function loadLocalCourse(courseId: string): Promise<LoadedCourseData | null> {
+  const db = await getLocalDb()
+  const record = await db.get('courses', courseId)
+  if (!record) return null
+  return {
+    chunks: (record.chunks as Array<{ cx: number; cz: number; data: Uint8Array }>).map(
+      ({ cx, cz, data }) => ({ cx, cz, data: rleDecode(data) }),
+    ),
+    objects: record.objects as RawObject[],
+  }
+}
+
+// ── Remote (Supabase) persistence ─────────────────────────────────────────────
 
 function uint8ToBase64(data: Uint8Array): string {
   let binary = ''
@@ -76,20 +141,6 @@ export async function saveCourse(
     .update({ updated_at: new Date().toISOString() })
     .eq('id', courseId)
   if (updErr) throw updErr
-}
-
-export type RawObject = {
-  id: string
-  type: string
-  x: number
-  y: number
-  z: number
-  rotation: number
-}
-
-export type LoadedCourseData = {
-  chunks: Array<{ cx: number; cz: number; data: Uint8Array }>
-  objects: RawObject[]
 }
 
 export async function loadCourseData(courseId: string): Promise<LoadedCourseData> {
