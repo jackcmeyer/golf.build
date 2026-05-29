@@ -27,11 +27,11 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 const SCULPT_TOOLS: { id: ToolMode; label: string; key: string; Icon: LucideIcon }[] = [
+  { id: 'paint', label: 'Paint', key: 'P', Icon: Paintbrush },
   { id: 'raise', label: 'Raise', key: 'R', Icon: ArrowUp },
   { id: 'lower', label: 'Lower', key: 'L', Icon: ArrowDown },
   { id: 'flatten', label: 'Flatten', key: 'F', Icon: Minus },
   { id: 'smooth', label: 'Smooth', key: 'S', Icon: Waves },
-  { id: 'paint', label: 'Paint', key: 'P', Icon: Paintbrush },
   { id: 'object', label: 'Objects', key: 'E', Icon: Shapes },
 ]
 

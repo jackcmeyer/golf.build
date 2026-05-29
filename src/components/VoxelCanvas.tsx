@@ -101,7 +101,7 @@ export default function VoxelCanvas({
   const onSaveStatusRef = useRef(onSaveStatus)
   const hasSessionRef = useRef(false)
 
-  const [toolMode, setToolMode] = useState<ToolMode>('raise')
+  const [toolMode, setToolMode] = useState<ToolMode>('paint')
   const [brushSize, setBrushSize] = useState(3)
   const [selectedSurface, setSelectedSurface] = useState<VoxelType>(VoxelType.FAIRWAY_GRASS)
   const [timeOfDay, setTimeOfDay] = useState(14.0)
