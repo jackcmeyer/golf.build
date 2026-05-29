@@ -23,6 +23,10 @@ import {
   getFogColor,
   getWaterColor,
 } from '../engine/worldState'
+import { ObjectType, OBJECT_NAMES, OBJECT_FOOTPRINT } from '../engine/objectTypes'
+import { ObjectManager } from '../engine/ObjectManager'
+import { createObjectMesh, updateWindMaterials, buildGolfer } from '../engine/ObjectMeshFactory'
+import { Gizmo } from '../engine/Gizmo'
 
 const HALF_W = (WORLD_WIDTH_VOXELS / 2) * VOXEL_SIZE
 const HALF_D = (WORLD_DEPTH_VOXELS / 2) * VOXEL_SIZE
@@ -48,16 +52,22 @@ const outlineMaterial = new THREE.ShaderMaterial({
 export default function VoxelCanvas() {
   const containerRef = useRef<HTMLDivElement>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
+  const gizmoRef = useRef<Gizmo | null>(null)
+  const golferGroupRef = useRef<THREE.Group | null>(null)
 
   const [toolMode, setToolMode] = useState<ToolMode>('raise')
   const [brushSize, setBrushSize] = useState(3)
   const [selectedSurface, setSelectedSurface] = useState<VoxelType>(VoxelType.FAIRWAY_GRASS)
   const [timeOfDay, setTimeOfDay] = useState(14.0)
+  const [selectedObjType, setSelectedObjType] = useState<ObjectType>(ObjectType.FLAGSTICK_CUP)
+  const [showGolfer, setShowGolfer] = useState(false)
 
   const toolRef = useRef(toolMode)
   const brushRef = useRef(brushSize)
   const surfaceRef = useRef(selectedSurface)
   const timeOfDayRef = useRef(timeOfDay)
+  const selectedObjTypeRef = useRef(selectedObjType)
+  const showGolferRef = useRef(showGolfer)
 
   useEffect(() => {
     toolRef.current = toolMode
@@ -71,7 +81,14 @@ export default function VoxelCanvas() {
   useEffect(() => {
     timeOfDayRef.current = timeOfDay
   }, [timeOfDay])
+  useEffect(() => {
+    selectedObjTypeRef.current = selectedObjType
+  }, [selectedObjType])
+  useEffect(() => {
+    showGolferRef.current = showGolfer
+  }, [showGolfer])
 
+  // Sync orbit controls mouse buttons with tool mode
   useEffect(() => {
     const c = controlsRef.current
     if (!c) return
@@ -90,7 +107,20 @@ export default function VoxelCanvas() {
       }
       c.touches = { ONE: undefined as unknown as THREE.TOUCH, TWO: THREE.TOUCH.DOLLY_PAN }
     }
+    // Detach gizmo when leaving object mode
+    if (toolMode !== 'object') {
+      gizmoRef.current?.detach()
+    }
+    // Hide golfer when leaving object mode
+    if (toolMode !== 'object' && golferGroupRef.current) {
+      golferGroupRef.current.visible = false
+    }
   }, [toolMode])
+
+  // Label div refs — updated imperatively each frame (avoids React re-renders at 60fps)
+  const footprintLabelRef = useRef<HTMLDivElement>(null)
+  const snapLabelRef = useRef<HTMLDivElement>(null)
+  const elevLabelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const container = containerRef.current!
@@ -108,7 +138,6 @@ export default function VoxelCanvas() {
 
     // ── Scene ─────────────────────────────────────────────────────────────────
     const scene = new THREE.Scene()
-    // Background color is kept in sync with sky horizon in animate loop
     const bgColor = new THREE.Color(0x4a9ad4)
     scene.background = bgColor
     scene.fog = new THREE.Fog(0x4a9ad4, 1000, 2000)
@@ -155,10 +184,10 @@ export default function VoxelCanvas() {
     // ── Sky system ────────────────────────────────────────────────────────────
     const skySystem = new SkySystem(scene)
 
-    // ── Water material (shared across all water meshes) ───────────────────────
+    // ── Water material ────────────────────────────────────────────────────────
     const waterMaterial = createWaterMaterial()
 
-    // ── Wind state (internal — varies slowly over time) ───────────────────────
+    // ── Wind state ────────────────────────────────────────────────────────────
     const windDir = new THREE.Vector2(0.8, 0.4).normalize()
     let windSpeed = 0.4
 
@@ -236,6 +265,55 @@ export default function VoxelCanvas() {
       }
     }
 
+    // ── Object system ─────────────────────────────────────────────────────────
+    const objectManager = new ObjectManager()
+    const objectMeshes = new Map<string, THREE.Group>()
+    const objectGroups: THREE.Group[] = []
+    let selectedObjId: string | null = null
+
+    function addObjectMesh(id: string, group: THREE.Group) {
+      group.userData.objectId = id
+      scene.add(group)
+      objectMeshes.set(id, group)
+      objectGroups.push(group)
+    }
+
+    function selectObject(id: string) {
+      selectedObjId = id
+      const obj = objectManager.objects.get(id)!
+      gizmoRef.current?.attach(id, obj.position, obj.rotation)
+    }
+
+    function deselectObject() {
+      selectedObjId = null
+      gizmoRef.current?.detach()
+    }
+
+    function removeObject(id: string) {
+      const group = objectMeshes.get(id)
+      if (group) {
+        scene.remove(group)
+        const idx = objectGroups.indexOf(group)
+        if (idx !== -1) objectGroups.splice(idx, 1)
+        group.traverse((o) => {
+          const m = o as THREE.Mesh
+          if (m.isMesh) m.geometry.dispose()
+        })
+        objectMeshes.delete(id)
+      }
+      objectManager.remove(id)
+    }
+
+    // ── Gizmo ─────────────────────────────────────────────────────────────────
+    const gizmo = new Gizmo(scene)
+    gizmoRef.current = gizmo
+
+    // ── Golfer silhouette ─────────────────────────────────────────────────────
+    const golferGroup = buildGolfer()
+    golferGroup.visible = false
+    scene.add(golferGroup)
+    golferGroupRef.current = golferGroup
+
     // ── Brush highlight ───────────────────────────────────────────────────────
     const MAX_HIGHLIGHT = 512
     const highlightGeo = new THREE.BoxGeometry(VOXEL_SIZE * 0.96, 0.3, VOXEL_SIZE * 0.96)
@@ -251,10 +329,18 @@ export default function VoxelCanvas() {
     scene.add(highlightMesh)
     const highlightDummy = new THREE.Object3D()
 
-    // ── Raycasting + tool application ─────────────────────────────────────────
+    // ── Raycasting helpers ────────────────────────────────────────────────────
     const raycaster = new THREE.Raycaster()
     const mouseNdc = new THREE.Vector2()
     let isLeftDown = false
+
+    function getNdc(e: PointerEvent): THREE.Vector2 {
+      const rect = container.getBoundingClientRect()
+      return new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      )
+    }
 
     function worldCoordsFromHit(e: PointerEvent) {
       const rect = container.getBoundingClientRect()
@@ -271,11 +357,11 @@ export default function VoxelCanvas() {
       const vy = Math.floor(inward.y / VOXEL_SIZE)
       const vz = Math.floor(inward.z / VOXEL_SIZE + WORLD_DEPTH_VOXELS / 2)
       if (!world.inBounds(vx, vy, vz)) return null
-      return { vx, vy, vz }
+      return { vx, vy, vz, worldPoint: hit.point }
     }
 
     function updateBrushHighlight(e: PointerEvent | null) {
-      if (e === null || toolRef.current === 'orbit') {
+      if (e === null || toolRef.current === 'orbit' || toolRef.current === 'object') {
         highlightMesh.count = 0
         return
       }
@@ -300,6 +386,22 @@ export default function VoxelCanvas() {
       }
       highlightMesh.count = i
       highlightMesh.instanceMatrix.needsUpdate = true
+    }
+
+    function updateGolferPosition(e: PointerEvent) {
+      if (!showGolferRef.current) {
+        golferGroup.visible = false
+        return
+      }
+      const ndc = getNdc(e)
+      raycaster.setFromCamera(ndc, camera)
+      const hits = raycaster.intersectObjects(terrainMeshes)
+      if (hits.length > 0) {
+        golferGroup.position.copy(hits[0].point)
+        golferGroup.visible = true
+      } else {
+        golferGroup.visible = false
+      }
     }
 
     function applyTool(vx: number, vy: number, vz: number) {
@@ -373,9 +475,51 @@ export default function VoxelCanvas() {
       }
     }
 
+    // ── Pointer event handlers ─────────────────────────────────────────────────
     function onPointerDown(e: PointerEvent) {
       if (e.button !== 0) return
-      if (toolRef.current === 'orbit') return
+      const tool = toolRef.current
+      if (tool === 'orbit') return
+
+      if (tool === 'object') {
+        const ndc = getNdc(e)
+
+        // 1. Try gizmo handles first
+        if (gizmo.onPointerDown(ndc, camera)) {
+          isLeftDown = true
+          container.setPointerCapture(e.pointerId)
+          return
+        }
+
+        // 2. Try object meshes → select
+        raycaster.setFromCamera(ndc, camera)
+        const objHits = raycaster.intersectObjects(objectGroups, true)
+        if (objHits.length > 0) {
+          let node: THREE.Object3D = objHits[0].object
+          while (node.parent && !node.userData.objectId) node = node.parent
+          const objId = node.userData.objectId as string | undefined
+          if (objId) {
+            selectObject(objId)
+            return
+          }
+        }
+
+        // 3. Click on terrain → place new object
+        raycaster.setFromCamera(ndc, camera)
+        const terrainHits = raycaster.intersectObjects(terrainMeshes)
+        if (terrainHits.length > 0) {
+          const point = terrainHits[0].point.clone()
+          const obj = objectManager.place(selectedObjTypeRef.current, point)
+          const group = createObjectMesh(obj.type)
+          group.position.copy(obj.position)
+          group.rotation.y = obj.rotation
+          addObjectMesh(obj.id, group)
+          deselectObject()
+        }
+        return
+      }
+
+      // Sculpt tools
       isLeftDown = true
       container.setPointerCapture(e.pointerId)
       const hit = worldCoordsFromHit(e)
@@ -383,9 +527,35 @@ export default function VoxelCanvas() {
     }
 
     function onPointerMove(e: PointerEvent) {
+      const tool = toolRef.current
+
+      if (tool === 'object') {
+        highlightMesh.count = 0
+        updateGolferPosition(e)
+
+        if (isLeftDown && gizmo.isDragging) {
+          const ndc = getNdc(e)
+          const result = gizmo.onPointerMove(ndc, camera)
+          if (result) {
+            const id = gizmo.attachedId!
+            if (result.position) {
+              objectManager.move(id, result.position)
+              const grp = objectMeshes.get(id)
+              if (grp) grp.position.copy(result.position)
+            }
+            if (result.rotation !== undefined) {
+              objectManager.rotate(id, result.rotation)
+              const grp = objectMeshes.get(id)
+              if (grp) grp.rotation.y = result.rotation
+            }
+          }
+        }
+        return
+      }
+
       updateBrushHighlight(e)
       if (!isLeftDown || !(e.buttons & 1)) return
-      if (toolRef.current === 'orbit') return
+      if (tool === 'orbit') return
       const hit = worldCoordsFromHit(e)
       if (hit) applyTool(hit.vx, hit.vy, hit.vz)
     }
@@ -393,16 +563,32 @@ export default function VoxelCanvas() {
     function onPointerUp(e: PointerEvent) {
       if (e.button !== 0) return
       isLeftDown = false
+      if (toolRef.current === 'object') {
+        gizmo.onPointerUp()
+      }
     }
 
     function onPointerLeave() {
       highlightMesh.count = 0
+      highlightMesh.instanceMatrix.needsUpdate = true
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        selectedObjId &&
+        toolRef.current === 'object'
+      ) {
+        removeObject(selectedObjId)
+        deselectObject()
+      }
     }
 
     container.addEventListener('pointerdown', onPointerDown)
     container.addEventListener('pointermove', onPointerMove)
     container.addEventListener('pointerup', onPointerUp)
     container.addEventListener('pointerleave', onPointerLeave)
+    window.addEventListener('keydown', onKeyDown)
 
     // ── Resize ────────────────────────────────────────────────────────────────
     function resize() {
@@ -416,6 +602,34 @@ export default function VoxelCanvas() {
     const ro = new ResizeObserver(resize)
     ro.observe(container)
 
+    // ── Label helpers ─────────────────────────────────────────────────────────
+    function projectToScreen(worldPos: THREE.Vector3): { x: number; y: number } {
+      const p = worldPos.clone().project(camera)
+      return {
+        x: ((p.x + 1) / 2) * container.clientWidth,
+        y: ((-p.y + 1) / 2) * container.clientHeight,
+      }
+    }
+
+    function hideLabel(el: HTMLDivElement | null) {
+      if (el) el.style.display = 'none'
+    }
+
+    function showLabel(
+      el: HTMLDivElement | null,
+      x: number,
+      y: number,
+      text: string,
+      dx = 14,
+      dy = 0,
+    ) {
+      if (!el) return
+      el.style.left = `${x + dx}px`
+      el.style.top = `${y + dy}px`
+      el.textContent = text
+      el.style.display = 'block'
+    }
+
     // ── Animate ───────────────────────────────────────────────────────────────
     const clock = new THREE.Clock()
     let frameId: number
@@ -426,7 +640,7 @@ export default function VoxelCanvas() {
       const elapsed = clock.getElapsedTime()
       const tod = timeOfDayRef.current
 
-      // Rebuild dirty chunks + LOD updates
+      // Rebuild dirty chunks + LOD
       for (const [key, chunk] of world.chunks) {
         const [cx, cz] = key.split(',').map(Number)
         const lod = getLODForChunk(cx, cz)
@@ -435,26 +649,26 @@ export default function VoxelCanvas() {
         }
       }
 
-      // Wind: slowly rotate direction and vary speed
+      // Wind
       const windAngle = elapsed * 0.04
       windDir.set(Math.cos(windAngle), Math.sin(windAngle) * 0.4).normalize()
       windSpeed = 0.3 + Math.sin(elapsed * 0.11) * 0.12 + 0.12
 
-      // Lighting — update sun + ambient to match time of day
+      // Lighting
       sun.position.copy(getSunPosition(tod))
       sun.intensity = getSunIntensity(tod)
       ambientLight.intensity = getAmbientIntensity(tod)
 
-      // Fog + background use a muted haze color — not the raw vivid sky horizon
+      // Fog + background
       const fogCol = getFogColor(tod)
       bgColor.copy(fogCol)
       ;(scene.fog as THREE.Fog).color.copy(fogCol)
 
-      // Sky system
+      // Sky
       skySystem.update(tod, windDir, windSpeed, dt)
       skySystem.followCamera(camera.position)
 
-      // Water material uniforms
+      // Water
       waterMaterial.uniforms.uTime.value = elapsed
       waterMaterial.uniforms.uWindDir.value.copy(windDir)
       waterMaterial.uniforms.uWindSpeed.value = windSpeed
@@ -464,6 +678,66 @@ export default function VoxelCanvas() {
       waterMaterial.uniforms.uAmbientColor.value.copy(ambientLight.color)
       waterMaterial.uniforms.uAmbientIntensity.value = ambientLight.intensity
       waterMaterial.uniforms.uWaterColor.value.copy(getWaterColor(tod))
+
+      // Tree wind
+      updateWindMaterials(elapsed, windDir, windSpeed)
+
+      // Gizmo scale
+      if (gizmo.group.visible) {
+        gizmo.updateScale(camera)
+      }
+
+      // Labels
+      const fl = footprintLabelRef.current
+      const sl = snapLabelRef.current
+      const el = elevLabelRef.current
+
+      if (selectedObjId && gizmo.group.visible) {
+        const obj = objectManager.objects.get(selectedObjId)
+        if (obj) {
+          const { x, y } = projectToScreen(gizmo.group.position)
+
+          if (!gizmo.isDragging) {
+            const fp = OBJECT_FOOTPRINT[obj.type]
+            showLabel(fl, x, y, `${fp[0]}m × ${fp[1]}m`)
+          } else {
+            hideLabel(fl)
+          }
+
+          if (
+            gizmo.isDragging &&
+            (gizmo.dragMode === 'translateX' || gizmo.dragMode === 'translateZ')
+          ) {
+            let nearest: { name: string; dist: number } | null = null
+            for (const other of objectManager.getAll()) {
+              if (other.id === selectedObjId) continue
+              const dx2 = obj.position.x - other.position.x
+              const dz2 = obj.position.z - other.position.z
+              const dist = Math.sqrt(dx2 * dx2 + dz2 * dz2)
+              if (dist < 50 && (!nearest || dist < nearest.dist)) {
+                nearest = { name: OBJECT_NAMES[other.type], dist: Math.round(dist) }
+              }
+            }
+            if (nearest) {
+              showLabel(sl, x, y, `${nearest.dist}m from ${nearest.name}`, 14, 20)
+            } else {
+              hideLabel(sl)
+            }
+          } else {
+            hideLabel(sl)
+          }
+
+          if (gizmo.isDragging && gizmo.dragMode === 'translateY') {
+            showLabel(el, x, y, `Y: ${obj.position.y.toFixed(1)}m`, 14, -20)
+          } else {
+            hideLabel(el)
+          }
+        }
+      } else {
+        hideLabel(fl)
+        hideLabel(sl)
+        hideLabel(el)
+      }
 
       controls.update()
       renderer.render(scene, camera)
@@ -476,6 +750,7 @@ export default function VoxelCanvas() {
       container.removeEventListener('pointermove', onPointerMove)
       container.removeEventListener('pointerup', onPointerUp)
       container.removeEventListener('pointerleave', onPointerLeave)
+      window.removeEventListener('keydown', onKeyDown)
       ro.disconnect()
       controls.dispose()
       renderer.dispose()
@@ -484,6 +759,12 @@ export default function VoxelCanvas() {
       for (const { geo, waterGeo } of chunkMap.values()) {
         geo.dispose()
         waterGeo.dispose()
+      }
+      for (const group of objectMeshes.values()) {
+        group.traverse((o) => {
+          const m = o as THREE.Mesh
+          if (m.isMesh) m.geometry.dispose()
+        })
       }
       highlightGeo.dispose()
       highlightMat.dispose()
@@ -503,6 +784,56 @@ export default function VoxelCanvas() {
         onSurfaceChange={setSelectedSurface}
         timeOfDay={timeOfDay}
         onTimeOfDayChange={setTimeOfDay}
+        selectedObjType={selectedObjType}
+        onObjTypeChange={setSelectedObjType}
+        showGolfer={showGolfer}
+        onGolferToggle={() => setShowGolfer((s) => !s)}
+      />
+      {/* Labels — updated imperatively in animate loop */}
+      <div
+        ref={footprintLabelRef}
+        style={{
+          display: 'none',
+          position: 'absolute',
+          pointerEvents: 'none',
+          background: 'rgba(0,0,0,0.72)',
+          color: 'rgba(255,255,255,0.82)',
+          padding: '3px 8px',
+          borderRadius: '5px',
+          fontFamily: 'monospace',
+          fontSize: '11px',
+          whiteSpace: 'nowrap',
+        }}
+      />
+      <div
+        ref={snapLabelRef}
+        style={{
+          display: 'none',
+          position: 'absolute',
+          pointerEvents: 'none',
+          background: 'rgba(0,0,0,0.72)',
+          color: 'rgba(255,255,180,0.82)',
+          padding: '3px 8px',
+          borderRadius: '5px',
+          fontFamily: 'monospace',
+          fontSize: '11px',
+          whiteSpace: 'nowrap',
+        }}
+      />
+      <div
+        ref={elevLabelRef}
+        style={{
+          display: 'none',
+          position: 'absolute',
+          pointerEvents: 'none',
+          background: 'rgba(0,0,0,0.72)',
+          color: 'rgba(120,255,160,0.9)',
+          padding: '3px 8px',
+          borderRadius: '5px',
+          fontFamily: 'monospace',
+          fontSize: '11px',
+          whiteSpace: 'nowrap',
+        }}
       />
     </div>
   )

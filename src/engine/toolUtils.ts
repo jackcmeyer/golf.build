@@ -1,4 +1,4 @@
-export type ToolMode = 'raise' | 'lower' | 'flatten' | 'smooth' | 'paint' | 'orbit'
+export type ToolMode = 'raise' | 'lower' | 'flatten' | 'smooth' | 'paint' | 'orbit' | 'object'
 
 export function getColumnsInRadius(
   centerX: number,

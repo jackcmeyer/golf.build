@@ -1,5 +1,6 @@
 import { VoxelType, VOXEL_COLORS } from '../voxelTypes'
 import { ToolMode } from '../engine/toolUtils'
+import { ObjectType, OBJECT_NAMES } from '../engine/objectTypes'
 import { Slider } from '@/components/ui/slider'
 import { Separator } from '@/components/ui/separator'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -10,6 +11,7 @@ const SCULPT_TOOLS: { id: ToolMode; label: string }[] = [
   { id: 'flatten', label: '— Flatten' },
   { id: 'smooth', label: '~ Smooth' },
   { id: 'paint', label: '# Paint' },
+  { id: 'object', label: '⬡ Objects' },
 ]
 
 const PAINTABLE: VoxelType[] = [
@@ -48,6 +50,20 @@ const SURFACE_LABELS: Partial<Record<VoxelType, string>> = {
   [VoxelType.BARE_SOIL]: 'Soil',
 }
 
+const ALL_OBJECT_TYPES = Object.values(ObjectType)
+
+// Swatch colors for object types (purely visual — not functional)
+const OBJECT_SWATCH: Record<ObjectType, string> = {
+  [ObjectType.FLAGSTICK_CUP]: '#e83232',
+  [ObjectType.TEE_MARKER_RED]: '#cc2222',
+  [ObjectType.TEE_MARKER_WHITE]: '#eeeeee',
+  [ObjectType.TEE_MARKER_BLUE]: '#2244cc',
+  [ObjectType.BENCH_WOOD]: '#9a6830',
+  [ObjectType.PINE_CONIFER]: '#2d6a1e',
+  [ObjectType.OAK_FULL]: '#3a8030',
+  [ObjectType.STONE_WALL]: '#888078',
+}
+
 const ITEM_BASE = [
   'w-full justify-start text-xs tracking-wide',
   'h-auto py-1.5 px-1.5',
@@ -69,6 +85,10 @@ interface ToolbarProps {
   onSurfaceChange: (s: VoxelType) => void
   timeOfDay: number
   onTimeOfDayChange: (t: number) => void
+  selectedObjType: ObjectType
+  onObjTypeChange: (t: ObjectType) => void
+  showGolfer: boolean
+  onGolferToggle: () => void
 }
 
 function formatHour(t: number): string {
@@ -86,7 +106,14 @@ export function Toolbar({
   onSurfaceChange,
   timeOfDay,
   onTimeOfDayChange,
+  selectedObjType,
+  onObjTypeChange,
+  showGolfer,
+  onGolferToggle,
 }: ToolbarProps) {
+  const isSculpt = toolMode !== 'orbit' && toolMode !== 'object'
+  const isObject = toolMode === 'object'
+
   return (
     <div className="pointer-events-auto absolute top-4 left-4 flex min-w-[152px] flex-col gap-2.5 rounded-xl border border-white/[0.09] bg-black/[0.88] p-3 font-mono text-sm backdrop-blur-sm select-none">
       {/* Orbit */}
@@ -109,10 +136,10 @@ export function Toolbar({
 
       <Separator className="bg-white/[0.08]" />
 
-      {/* Sculpt tools */}
+      {/* Sculpt + object tools */}
       <ToggleGroup
         type="single"
-        value={toolMode !== 'orbit' ? toolMode : ''}
+        value={isSculpt ? toolMode : isObject ? 'object' : ''}
         onValueChange={(v) => {
           if (v) onToolChange(v as ToolMode)
         }}
@@ -129,17 +156,19 @@ export function Toolbar({
         ))}
       </ToggleGroup>
 
-      {/* Brush size */}
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[10px] text-white/35">Brush — {brushSize}vx</span>
-        <Slider
-          min={1}
-          max={12}
-          value={[brushSize]}
-          onValueChange={(vals) => onBrushChange(vals[0])}
-          className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
-        />
-      </div>
+      {/* Brush size — sculpt tools only */}
+      {isSculpt && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10px] text-white/35">Brush — {brushSize}vx</span>
+          <Slider
+            min={1}
+            max={12}
+            value={[brushSize]}
+            onValueChange={(vals) => onBrushChange(vals[0])}
+            className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
+          />
+        </div>
+      )}
 
       {/* Surface palette — paint mode only */}
       {toolMode === 'paint' && (
@@ -171,6 +200,60 @@ export function Toolbar({
         </div>
       )}
 
+      {/* Object picker + golfer — object mode only */}
+      {isObject && (
+        <div className="flex flex-col gap-2">
+          <div className="text-[10px] text-white/35">Place object</div>
+          <div className="flex flex-col gap-0.5">
+            {ALL_OBJECT_TYPES.map((t) => {
+              const active = selectedObjType === t
+              return (
+                <div
+                  key={t}
+                  onClick={() => onObjTypeChange(t)}
+                  className={[
+                    'flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-[11px] transition-all',
+                    active
+                      ? 'bg-green-900/50 text-green-200'
+                      : 'text-white/50 hover:bg-white/[0.06] hover:text-white/80',
+                  ].join(' ')}
+                >
+                  <span
+                    className="inline-block size-2.5 shrink-0 rounded-sm border border-white/20"
+                    style={{ background: OBJECT_SWATCH[t] }}
+                  />
+                  {OBJECT_NAMES[t]}
+                </div>
+              )
+            })}
+          </div>
+          <Separator className="bg-white/[0.08]" />
+          <div
+            onClick={onGolferToggle}
+            className={[
+              'flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-[11px] transition-all',
+              showGolfer
+                ? 'bg-white/10 text-white/90'
+                : 'text-white/40 hover:bg-white/[0.06] hover:text-white/70',
+            ].join(' ')}
+          >
+            <span className="inline-block size-2.5 shrink-0 rounded-full border border-white/30 bg-white/60" />
+            Golfer silhouette
+          </div>
+          <p className="text-[10px] leading-relaxed text-white/22">
+            Click terrain: place
+            <br />
+            Click object: select
+            <br />
+            Drag arrows: move
+            <br />
+            Drag ring: rotate
+            <br />
+            Del: remove selected
+          </p>
+        </div>
+      )}
+
       <Separator className="bg-white/[0.08]" />
 
       {/* Time of day */}
@@ -186,17 +269,19 @@ export function Toolbar({
         />
       </div>
 
-      {/* Keyboard / touch hints */}
-      <p className="text-[10px] leading-relaxed text-white/22">
-        L-drag: sculpt
-        <br />
-        R-drag: orbit
-        <br />
-        Scroll: zoom
-        <br />
-        Mobile: orbit mode
-        <br />+ 2-finger zoom
-      </p>
+      {/* Keyboard / touch hints — sculpt/orbit only */}
+      {!isObject && (
+        <p className="text-[10px] leading-relaxed text-white/22">
+          L-drag: sculpt
+          <br />
+          R-drag: orbit
+          <br />
+          Scroll: zoom
+          <br />
+          Mobile: orbit mode
+          <br />+ 2-finger zoom
+        </p>
+      )}
     </div>
   )
 }
