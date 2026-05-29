@@ -75,6 +75,10 @@ export default function VoxelCanvas() {
   const walkControllerRef = useRef<WalkController | null>(null)
   const enterWalkRef = useRef<(() => void) | null>(null)
   const exitWalkRef = useRef<(() => void) | null>(null)
+  const arrowKeysRef = useRef<Set<string>>(new Set())
+  const spaceHeldRef = useRef(false)
+  const isPanningRef = useRef(false)
+  const lastPanRef = useRef({ x: 0, y: 0 })
 
   type TweenState = {
     startPos: THREE.Vector3
@@ -454,6 +458,19 @@ export default function VoxelCanvas() {
     scene.add(highlightMesh)
     const highlightDummy = new THREE.Object3D()
 
+    // ── Pan state ─────────────────────────────────────────────────────────────
+    function applyPan(dx: number, dy: number) {
+      const dist = camera.position.distanceTo(controls.target)
+      const scale =
+        (dist * 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5)) / container.clientHeight
+      const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0)
+      const fwd = new THREE.Vector3().crossVectors(right, new THREE.Vector3(0, 1, 0))
+      camera.position.addScaledVector(right, -dx * scale)
+      camera.position.addScaledVector(fwd, -dy * scale)
+      controls.target.addScaledVector(right, -dx * scale)
+      controls.target.addScaledVector(fwd, -dy * scale)
+    }
+
     // ── Raycasting helpers ────────────────────────────────────────────────────
     const raycaster = new THREE.Raycaster()
     const mouseNdc = new THREE.Vector2()
@@ -604,6 +621,17 @@ export default function VoxelCanvas() {
     function onPointerDown(e: PointerEvent) {
       if (isWalkModeRef.current) return
       if (e.button !== 0) return
+
+      // Space + left-drag = pan
+      if (spaceHeldRef.current) {
+        isPanningRef.current = true
+        lastPanRef.current.x = e.clientX
+        lastPanRef.current.y = e.clientY
+        container.setPointerCapture(e.pointerId)
+        container.style.cursor = 'grabbing'
+        return
+      }
+
       const tool = toolRef.current
       if (tool === 'orbit') return
 
@@ -654,6 +682,14 @@ export default function VoxelCanvas() {
 
     function onPointerMove(e: PointerEvent) {
       if (isWalkModeRef.current) return
+
+      if (isPanningRef.current) {
+        applyPan(e.clientX - lastPanRef.current.x, e.clientY - lastPanRef.current.y)
+        lastPanRef.current.x = e.clientX
+        lastPanRef.current.y = e.clientY
+        return
+      }
+
       const tool = toolRef.current
 
       if (tool === 'object') {
@@ -690,6 +726,11 @@ export default function VoxelCanvas() {
     function onPointerUp(e: PointerEvent) {
       if (isWalkModeRef.current) return
       if (e.button !== 0) return
+      if (isPanningRef.current) {
+        isPanningRef.current = false
+        container.style.cursor = spaceHeldRef.current ? 'grab' : ''
+        return
+      }
       isLeftDown = false
       if (toolRef.current === 'object') {
         gizmo.onPointerUp()
@@ -702,6 +743,21 @@ export default function VoxelCanvas() {
     }
 
     function onKeyDown(e: KeyboardEvent) {
+      if (e.code === 'Space' && !isWalkModeRef.current) {
+        spaceHeldRef.current = true
+        container.style.cursor = 'grab'
+        e.preventDefault()
+      }
+      if (
+        !isWalkModeRef.current &&
+        (e.code === 'ArrowLeft' ||
+          e.code === 'ArrowRight' ||
+          e.code === 'ArrowUp' ||
+          e.code === 'ArrowDown')
+      ) {
+        arrowKeysRef.current.add(e.code)
+        e.preventDefault()
+      }
       if (
         (e.key === 'Delete' || e.key === 'Backspace') &&
         selectedObjId &&
@@ -712,11 +768,20 @@ export default function VoxelCanvas() {
       }
     }
 
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === 'Space') {
+        spaceHeldRef.current = false
+        if (!isPanningRef.current) container.style.cursor = ''
+      }
+      arrowKeysRef.current.delete(e.code)
+    }
+
     container.addEventListener('pointerdown', onPointerDown)
     container.addEventListener('pointermove', onPointerMove)
     container.addEventListener('pointerup', onPointerUp)
     container.addEventListener('pointerleave', onPointerLeave)
     window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
 
     // ── Resize ────────────────────────────────────────────────────────────────
     function resize() {
@@ -909,6 +974,21 @@ export default function VoxelCanvas() {
         hideLabel(el)
       }
 
+      // Arrow key panning (orbital / sculpt modes only)
+      if (!inWalk && !tweenRef.current && arrowKeysRef.current.size > 0) {
+        const dist = camera.position.distanceTo(controls.target)
+        const speed = dist * 1.5 * dt
+        const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0)
+        const fwd = new THREE.Vector3().crossVectors(right, new THREE.Vector3(0, 1, 0))
+        const offset = new THREE.Vector3()
+        if (arrowKeysRef.current.has('ArrowLeft')) offset.addScaledVector(right, -speed)
+        if (arrowKeysRef.current.has('ArrowRight')) offset.addScaledVector(right, speed)
+        if (arrowKeysRef.current.has('ArrowUp')) offset.addScaledVector(fwd, -speed)
+        if (arrowKeysRef.current.has('ArrowDown')) offset.addScaledVector(fwd, speed)
+        camera.position.add(offset)
+        controls.target.add(offset)
+      }
+
       if (!inWalk) controls.update()
       renderer.render(scene, camera)
     }
@@ -922,6 +1002,7 @@ export default function VoxelCanvas() {
       container.removeEventListener('pointerup', onPointerUp)
       container.removeEventListener('pointerleave', onPointerLeave)
       window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
       ro.disconnect()
       controls.dispose()
       renderer.dispose()
