@@ -6,6 +6,7 @@ import { buildChunkGeometry, buildWaterGeometry } from '../engine/ChunkMeshBuild
 import { initWorld } from '../engine/worldInit'
 import {
   VOXEL_SIZE,
+  VOXEL_HEIGHT,
   CHUNK_SIZE,
   WORLD_WIDTH_VOXELS,
   WORLD_DEPTH_VOXELS,
@@ -373,12 +374,12 @@ export default function VoxelCanvas() {
             ),
           )
           const h = world.getSurfaceHeight(vx, vz)
-          const groundY = (h >= 0 ? h + 1 : 1) * VOXEL_SIZE
+          const groundY = (h >= 0 ? h + 1 : 1) * VOXEL_HEIGHT
           return new THREE.Vector3(obj.position.x, groundY + 1.8, obj.position.z)
         }
       }
       const h = world.getSurfaceHeight(WORLD_WIDTH_VOXELS / 2, WORLD_DEPTH_VOXELS / 2)
-      const groundY = (h >= 0 ? h + 1 : 1) * VOXEL_SIZE
+      const groundY = (h >= 0 ? h + 1 : 1) * VOXEL_HEIGHT
       return new THREE.Vector3(0, groundY + 1.8, 0)
     }
 
@@ -496,7 +497,7 @@ export default function VoxelCanvas() {
       const hit = hits[0]
       const inward = hit.point.clone().addScaledVector(hit.face!.normal, -0.01)
       const vx = Math.floor(inward.x / VOXEL_SIZE + WORLD_WIDTH_VOXELS / 2)
-      const vy = Math.floor(inward.y / VOXEL_SIZE)
+      const vy = Math.floor(inward.y / VOXEL_HEIGHT)
       const vz = Math.floor(inward.z / VOXEL_SIZE + WORLD_DEPTH_VOXELS / 2)
       if (!world.inBounds(vx, vy, vz)) return null
       return { vx, vy, vz, worldPoint: hit.point }
@@ -518,7 +519,7 @@ export default function VoxelCanvas() {
         const h = world.getSurfaceHeight(hx, hz)
         if (h < 0) continue
         const wx = (hx - WORLD_WIDTH_VOXELS / 2) * VOXEL_SIZE + VOXEL_SIZE / 2
-        const wy = (h + 1) * VOXEL_SIZE + 0.08
+        const wy = (h + 1) * VOXEL_HEIGHT + 0.08
         const wz = (hz - WORLD_DEPTH_VOXELS / 2) * VOXEL_SIZE + VOXEL_SIZE / 2
         highlightDummy.position.set(wx, wy, wz)
         highlightDummy.updateMatrix()

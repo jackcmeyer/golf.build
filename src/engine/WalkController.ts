@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import type { VoxelWorld } from './VoxelWorld'
-import { VOXEL_SIZE, WORLD_WIDTH_VOXELS, WORLD_DEPTH_VOXELS } from './constants'
+import { VOXEL_SIZE, VOXEL_HEIGHT, WORLD_WIDTH_VOXELS, WORLD_DEPTH_VOXELS } from './constants'
 
 const EYE_HEIGHT = 1.8
 const WALK_SPEED = 10
@@ -113,7 +113,7 @@ export class WalkController {
       ),
     )
     const surfaceH = this.world.getSurfaceHeight(vx, vz)
-    const groundY = (surfaceH >= 0 ? surfaceH + 1 : 1) * VOXEL_SIZE
+    const groundY = (surfaceH >= 0 ? surfaceH + 1 : 1) * VOXEL_HEIGHT
     this.camera.position.y = groundY + EYE_HEIGHT
   }
 }

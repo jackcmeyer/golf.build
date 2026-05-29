@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { VoxelWorld } from './VoxelWorld'
 import { VoxelChunk } from './VoxelChunk'
-import { CHUNK_SIZE, CHUNK_HEIGHT, VOXEL_SIZE } from './constants'
+import { CHUNK_SIZE, CHUNK_HEIGHT, VOXEL_SIZE, VOXEL_HEIGHT } from './constants'
 import { VoxelType, VOXEL_COLORS } from '../voxelTypes'
 
 const WATER_TYPES = new Set<number>([
@@ -132,7 +132,7 @@ export function buildChunkGeometry(
           const br = face.bright
 
           for (const [vx, vy, vz] of face.corners) {
-            positions.push((lx + vx) * VOXEL_SIZE, (ly + vy) * VOXEL_SIZE, (lz + vz) * VOXEL_SIZE)
+            positions.push((lx + vx) * VOXEL_SIZE, (ly + vy) * VOXEL_HEIGHT, (lz + vz) * VOXEL_SIZE)
             normals.push(...face.normal)
             colors.push(r * br, g * br, b * br)
           }

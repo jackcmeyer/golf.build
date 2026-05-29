@@ -1,4 +1,5 @@
 export const VOXEL_SIZE = 2
+export const VOXEL_HEIGHT = 0.5
 export const CHUNK_SIZE = 32
 export const CHUNK_HEIGHT = 64
 export const WORLD_WIDTH_CHUNKS = 7
