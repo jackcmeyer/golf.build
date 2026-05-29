@@ -3,7 +3,6 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VoxelWorld } from '../engine/VoxelWorld'
 import { buildChunkGeometry, buildWaterGeometry } from '../engine/ChunkMeshBuilder'
-import { initWorld } from '../engine/worldInit'
 import {
   VOXEL_SIZE,
   VOXEL_HEIGHT,
@@ -25,10 +24,22 @@ import {
   getWaterColor,
 } from '../engine/worldState'
 import { ObjectType, OBJECT_NAMES, OBJECT_FOOTPRINT } from '../engine/objectTypes'
-import { ObjectManager } from '../engine/ObjectManager'
+import { ObjectManager, CourseObject } from '../engine/ObjectManager'
 import { createObjectMesh, updateWindMaterials, buildGolfer } from '../engine/ObjectMeshFactory'
 import { Gizmo } from '../engine/Gizmo'
 import { WalkController } from '../engine/WalkController'
+import { saveCourse, loadCourseData } from '../lib/persistence'
+import { initTerrain, type TerrainPreset } from '../engine/terrainPresets'
+
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+
+interface VoxelCanvasProps {
+  courseId?: string | null
+  initialPreset?: TerrainPreset
+  readOnly?: boolean
+  screenshotCbRef?: React.MutableRefObject<(() => Promise<Blob | null>) | null>
+  onSaveStatus?: (status: SaveStatus) => void
+}
 
 const HALF_W = (WORLD_WIDTH_VOXELS / 2) * VOXEL_SIZE
 const HALF_D = (WORLD_DEPTH_VOXELS / 2) * VOXEL_SIZE
@@ -51,11 +62,34 @@ const outlineMaterial = new THREE.ShaderMaterial({
   `,
 })
 
-export default function VoxelCanvas() {
+export default function VoxelCanvas({
+  courseId,
+  initialPreset,
+  readOnly = false,
+  screenshotCbRef,
+  onSaveStatus,
+}: VoxelCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const gizmoRef = useRef<Gizmo | null>(null)
   const golferGroupRef = useRef<THREE.Group | null>(null)
+
+  // Refs shared between the main useEffect and the courseId load effect
+  const worldRef = useRef<VoxelWorld | null>(null)
+  const objectManagerRef = useRef<ObjectManager | null>(null)
+  const addObjectMeshRef = useRef<((id: string, group: THREE.Group) => void) | null>(null)
+  const removeObjectRef = useRef<((id: string) => void) | null>(null)
+
+  // Capture the preset at mount — component remounts (key changes) when this should change
+  const initialPresetRef = useRef(initialPreset)
+  const readOnlyRef = useRef(readOnly)
+  const screenshotCbPropRef = useRef(screenshotCbRef)
+
+  // Auto-save state
+  const lastMutationTimeRef = useRef(0)
+  const isSavingRef = useRef(false)
+  const courseIdRef = useRef<string | null>(null)
+  const onSaveStatusRef = useRef(onSaveStatus)
 
   const [toolMode, setToolMode] = useState<ToolMode>('raise')
   const [brushSize, setBrushSize] = useState(3)
@@ -111,6 +145,54 @@ export default function VoxelCanvas() {
     showGolferRef.current = showGolfer
   }, [showGolfer])
 
+  // Sync courseId ref so the animate loop can read it without a closure
+  useEffect(() => {
+    courseIdRef.current = courseId ?? null
+  }, [courseId])
+
+  useEffect(() => {
+    onSaveStatusRef.current = onSaveStatus
+  }, [onSaveStatus])
+
+  // Load course data when courseId becomes available
+  useEffect(() => {
+    if (!courseId) return
+    loadCourseData(courseId)
+      .then(({ chunks, objects }) => {
+        const world = worldRef.current
+        const objectManager = objectManagerRef.current
+        const addObjMesh = addObjectMeshRef.current
+        const removeObj = removeObjectRef.current
+        if (!world || !objectManager || !addObjMesh || !removeObj) return
+
+        for (const { cx, cz, data } of chunks) {
+          const chunk = world.getChunk(cx, cz)
+          if (chunk) {
+            chunk.data.set(data)
+            chunk.isDirty = true
+          }
+        }
+
+        for (const id of [...objectManager.objects.keys()]) removeObj(id)
+
+        for (const raw of objects) {
+          const pos = new THREE.Vector3(raw.x, raw.y, raw.z)
+          const courseObj: CourseObject = {
+            id: raw.id,
+            type: raw.type as ObjectType,
+            position: pos,
+            rotation: raw.rotation,
+          }
+          objectManager.objects.set(raw.id, courseObj)
+          const group = createObjectMesh(raw.type as ObjectType)
+          group.position.copy(pos)
+          group.rotation.y = raw.rotation
+          addObjMesh(raw.id, group)
+        }
+      })
+      .catch((err) => console.error('Failed to load course:', err))
+  }, [courseId])
+
   // Sync orbit controls mouse buttons with tool mode
   useEffect(() => {
     const c = controlsRef.current
@@ -150,10 +232,11 @@ export default function VoxelCanvas() {
 
     // ── World ──────────────────────────────────────────────────────────────────
     const world = new VoxelWorld(WORLD_WIDTH_VOXELS, WORLD_DEPTH_VOXELS)
-    initWorld(world)
+    initTerrain(world, initialPresetRef.current ?? 'default')
+    worldRef.current = world
 
     // ── Renderer ──────────────────────────────────────────────────────────────
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -206,6 +289,15 @@ export default function VoxelCanvas() {
 
     // ── Sky system ────────────────────────────────────────────────────────────
     const skySystem = new SkySystem(scene)
+
+    // Expose screenshot capture to parent
+    if (screenshotCbPropRef.current) {
+      screenshotCbPropRef.current.current = () =>
+        new Promise((resolve) => {
+          renderer.render(scene, camera)
+          renderer.domElement.toBlob(resolve, 'image/jpeg', 0.88)
+        })
+    }
 
     // ── Water material ────────────────────────────────────────────────────────
     const waterMaterial = createWaterMaterial()
@@ -295,6 +387,7 @@ export default function VoxelCanvas() {
 
     // ── Object system ─────────────────────────────────────────────────────────
     const objectManager = new ObjectManager()
+    objectManagerRef.current = objectManager
     const objectMeshes = new Map<string, THREE.Group>()
     const objectGroups: THREE.Group[] = []
     let selectedObjId: string | null = null
@@ -305,6 +398,7 @@ export default function VoxelCanvas() {
       objectMeshes.set(id, group)
       objectGroups.push(group)
     }
+    addObjectMeshRef.current = addObjectMesh
 
     function selectObject(id: string) {
       selectedObjId = id
@@ -330,6 +424,11 @@ export default function VoxelCanvas() {
         objectMeshes.delete(id)
       }
       objectManager.remove(id)
+    }
+    removeObjectRef.current = removeObject
+
+    function markMutated() {
+      lastMutationTimeRef.current = Date.now()
     }
 
     // ── Gizmo ─────────────────────────────────────────────────────────────────
@@ -616,11 +715,13 @@ export default function VoxelCanvas() {
           if (h >= 0) world.setVoxel(x, h, z, surface)
         }
       }
+      markMutated()
     }
 
     // ── Pointer event handlers ─────────────────────────────────────────────────
     function onPointerDown(e: PointerEvent) {
       if (isWalkModeRef.current) return
+      if (readOnlyRef.current) return
       if (e.button !== 0) return
 
       // Space + left-drag = pan
@@ -670,6 +771,7 @@ export default function VoxelCanvas() {
           group.rotation.y = obj.rotation
           addObjectMesh(obj.id, group)
           deselectObject()
+          markMutated()
         }
         return
       }
@@ -734,6 +836,7 @@ export default function VoxelCanvas() {
       }
       isLeftDown = false
       if (toolRef.current === 'object') {
+        if (gizmo.isDragging) markMutated()
         gizmo.onPointerUp()
       }
     }
@@ -760,12 +863,14 @@ export default function VoxelCanvas() {
         e.preventDefault()
       }
       if (
+        !readOnlyRef.current &&
         (e.key === 'Delete' || e.key === 'Backspace') &&
         selectedObjId &&
         toolRef.current === 'object'
       ) {
         removeObject(selectedObjId)
         deselectObject()
+        markMutated()
       }
     }
 
@@ -990,12 +1095,39 @@ export default function VoxelCanvas() {
         controls.target.add(offset)
       }
 
+      // Auto-save after 30s of idle if a courseId is set
+      const nowMs = Date.now()
+      if (
+        courseIdRef.current &&
+        lastMutationTimeRef.current > 0 &&
+        nowMs - lastMutationTimeRef.current > 30_000 &&
+        !isSavingRef.current
+      ) {
+        isSavingRef.current = true
+        lastMutationTimeRef.current = 0
+        const id = courseIdRef.current
+        onSaveStatusRef.current?.('saving')
+        saveCourse(id, world, objectManager)
+          .then(() => {
+            onSaveStatusRef.current?.('saved')
+            isSavingRef.current = false
+          })
+          .catch(() => {
+            onSaveStatusRef.current?.('error')
+            isSavingRef.current = false
+          })
+      }
+
       if (!inWalk) controls.update()
       renderer.render(scene, camera)
     }
     animate()
 
     return () => {
+      worldRef.current = null
+      objectManagerRef.current = null
+      addObjectMeshRef.current = null
+      removeObjectRef.current = null
       cancelAnimationFrame(frameId)
       walkController.disable()
       container.removeEventListener('pointerdown', onPointerDown)
@@ -1028,7 +1160,7 @@ export default function VoxelCanvas() {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      {!isWalkMode && (
+      {!isWalkMode && !readOnly && (
         <Toolbar
           toolMode={toolMode}
           onToolChange={setToolMode}
