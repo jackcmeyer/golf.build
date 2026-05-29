@@ -18,9 +18,7 @@ import { SkySystem } from '../engine/SkySystem'
 import { createWaterMaterial } from '../engine/WaterMaterial'
 import {
   getSunPosition,
-  getSunColor,
   getSunIntensity,
-  getAmbientColor,
   getAmbientIntensity,
   getFogColor,
   getWaterColor,
@@ -444,9 +442,7 @@ export default function VoxelCanvas() {
 
       // Lighting — update sun + ambient to match time of day
       sun.position.copy(getSunPosition(tod))
-      sun.color.copy(getSunColor(tod))
       sun.intensity = getSunIntensity(tod)
-      ambientLight.color.copy(getAmbientColor(tod))
       ambientLight.intensity = getAmbientIntensity(tod)
 
       // Fog + background use a muted haze color — not the raw vivid sky horizon
