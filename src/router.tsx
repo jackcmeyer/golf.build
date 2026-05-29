@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-router'
 import type { Session } from '@supabase/supabase-js'
 import App from './App'
+import { supabase } from './lib/supabase'
 import { EditorPage } from './pages/EditorPage'
 import { GalleryPage } from './pages/GalleryPage'
 import { ViewerPage } from './pages/ViewerPage'
@@ -17,11 +18,15 @@ export interface RouterContext {
 // Root route — App is the layout shell (nav + Outlet)
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: App })
 
-// / → /editor
+// / → /editor (exchange Supabase PKCE code before redirecting so the URL isn't stripped)
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  beforeLoad: () => {
+  beforeLoad: async () => {
+    const code = new URLSearchParams(window.location.search).get('code')
+    if (code && supabase) {
+      await supabase.auth.exchangeCodeForSession(code)
+    }
     throw redirect({ to: '/editor' })
   },
 })
