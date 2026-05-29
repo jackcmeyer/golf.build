@@ -1,3 +1,5 @@
+import type { LucideIcon } from 'lucide-react'
+import { ArrowDown, ArrowUp, Globe, Minus, Paintbrush, Shapes, Waves } from 'lucide-react'
 import { VoxelType, VOXEL_COLORS } from '../voxelTypes'
 import { ToolMode } from '../engine/toolUtils'
 import { ObjectType, OBJECT_NAMES } from '../engine/objectTypes'
@@ -5,13 +7,13 @@ import { Slider } from '@/components/ui/slider'
 import { Separator } from '@/components/ui/separator'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
-const SCULPT_TOOLS: { id: ToolMode; label: string }[] = [
-  { id: 'raise', label: '^ Raise' },
-  { id: 'lower', label: 'v Lower' },
-  { id: 'flatten', label: '— Flatten' },
-  { id: 'smooth', label: '~ Smooth' },
-  { id: 'paint', label: '# Paint' },
-  { id: 'object', label: '⬡ Objects' },
+const SCULPT_TOOLS: { id: ToolMode; label: string; key: string; Icon: LucideIcon }[] = [
+  { id: 'raise', label: 'Raise', key: 'R', Icon: ArrowUp },
+  { id: 'lower', label: 'Lower', key: 'L', Icon: ArrowDown },
+  { id: 'flatten', label: 'Flatten', key: 'F', Icon: Minus },
+  { id: 'smooth', label: 'Smooth', key: 'S', Icon: Waves },
+  { id: 'paint', label: 'Paint', key: 'P', Icon: Paintbrush },
+  { id: 'object', label: 'Objects', key: 'E', Icon: Shapes },
 ]
 
 const PAINTABLE: VoxelType[] = [
@@ -90,6 +92,8 @@ interface ToolbarProps {
   showGolfer: boolean
   onGolferToggle: () => void
   onEnterWalk: () => void
+  canUndo: boolean
+  onUndo: () => void
 }
 
 function formatHour(t: number): string {
@@ -112,6 +116,8 @@ export function Toolbar({
   showGolfer,
   onGolferToggle,
   onEnterWalk,
+  canUndo,
+  onUndo,
 }: ToolbarProps) {
   const isSculpt = toolMode !== 'orbit' && toolMode !== 'object'
   const isObject = toolMode === 'object'
@@ -132,7 +138,15 @@ export function Toolbar({
         className="w-full"
       >
         <ToggleGroupItem value="orbit" className={`${ITEM_BASE} ${ORBIT_ACTIVE}`}>
-          + Orbit
+          <span className="flex w-full items-center justify-between">
+            <span className="flex items-center gap-2">
+              <Globe size={12} strokeWidth={1.75} />
+              Orbit
+            </span>
+            <kbd className="rounded border border-white/10 px-1 font-mono text-[9px] text-white/25">
+              O
+            </kbd>
+          </span>
         </ToggleGroupItem>
       </ToggleGroup>
 
@@ -151,16 +165,24 @@ export function Toolbar({
         size="sm"
         className="w-full"
       >
-        {SCULPT_TOOLS.map((t) => (
-          <ToggleGroupItem key={t.id} value={t.id} className={`${ITEM_BASE} ${SCULPT_ACTIVE}`}>
-            {t.label}
+        {SCULPT_TOOLS.map(({ id, label, key, Icon }) => (
+          <ToggleGroupItem key={id} value={id} className={`${ITEM_BASE} ${SCULPT_ACTIVE}`}>
+            <span className="flex w-full items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Icon size={12} strokeWidth={1.75} />
+                {label}
+              </span>
+              <kbd className="rounded border border-white/10 px-1 font-mono text-[9px] text-white/25">
+                {key}
+              </kbd>
+            </span>
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
 
       {/* Brush size — sculpt tools only */}
       {isSculpt && (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <span className="text-[10px] text-white/35">Brush — {brushSize}vx</span>
           <Slider
             min={1}
@@ -214,7 +236,7 @@ export function Toolbar({
                   key={t}
                   onClick={() => onObjTypeChange(t)}
                   className={[
-                    'flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-[11px] transition-all',
+                    'flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] transition-all',
                     active
                       ? 'bg-green-900/50 text-green-200'
                       : 'text-white/50 hover:bg-white/[0.06] hover:text-white/80',
@@ -233,7 +255,7 @@ export function Toolbar({
           <div
             onClick={onGolferToggle}
             className={[
-              'flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-[11px] transition-all',
+              'flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] transition-all',
               showGolfer
                 ? 'bg-white/10 text-white/90'
                 : 'text-white/40 hover:bg-white/[0.06] hover:text-white/70',
@@ -259,7 +281,7 @@ export function Toolbar({
       <Separator className="bg-white/[0.08]" />
 
       {/* Time of day */}
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         <span className="text-[10px] text-white/35">Time — {formatHour(timeOfDay)}</span>
         <Slider
           min={0}
@@ -286,6 +308,16 @@ export function Toolbar({
       )}
 
       <Separator className="bg-white/[0.08]" />
+
+      {/* Undo */}
+      <button
+        onClick={onUndo}
+        disabled={!canUndo}
+        title="Undo (Ctrl+Z)"
+        className="w-full cursor-pointer rounded border border-white/[0.08] bg-white/[0.04] py-1.5 text-center text-xs tracking-wide text-white/50 transition-all hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        ↩ Undo
+      </button>
 
       {/* Walk mode entry */}
       <button

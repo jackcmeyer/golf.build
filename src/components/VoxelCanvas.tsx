@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useHotkeys } from '@tanstack/react-hotkeys'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { VoxelWorld } from '../engine/VoxelWorld'
@@ -101,6 +102,8 @@ export default function VoxelCanvas({
   const [showGolfer, setShowGolfer] = useState(false)
   const [isWalkMode, setIsWalkMode] = useState(false)
   const [isPointerLocked, setIsPointerLocked] = useState(false)
+  const [canUndo, setCanUndo] = useState(false)
+  const undoCallbackRef = useRef<(() => void) | null>(null)
 
   const toolRef = useRef(toolMode)
   const brushRef = useRef(brushSize)
@@ -116,6 +119,8 @@ export default function VoxelCanvas({
   const spaceHeldRef = useRef(false)
   const isPanningRef = useRef(false)
   const lastPanRef = useRef({ x: 0, y: 0 })
+  const selectedObjIdRef = useRef<string | null>(null)
+  const deselectObjectRef = useRef<(() => void) | null>(null)
 
   type TweenState = {
     startPos: THREE.Vector3
@@ -253,6 +258,22 @@ export default function VoxelCanvas({
       golferGroupRef.current.visible = false
     }
   }, [toolMode])
+
+  // ── Keyboard shortcuts ─────────────────────────────────────────────────────
+  useHotkeys(
+    [
+      { hotkey: 'O', callback: () => setToolMode('orbit') },
+      { hotkey: 'R', callback: () => !readOnlyRef.current && setToolMode('raise') },
+      { hotkey: 'L', callback: () => !readOnlyRef.current && setToolMode('lower') },
+      { hotkey: 'F', callback: () => !readOnlyRef.current && setToolMode('flatten') },
+      { hotkey: 'S', callback: () => !readOnlyRef.current && setToolMode('smooth') },
+      { hotkey: 'P', callback: () => !readOnlyRef.current && setToolMode('paint') },
+      { hotkey: 'E', callback: () => !readOnlyRef.current && setToolMode('object') },
+      { hotkey: '[', callback: () => setBrushSize((b) => Math.max(1, b - 1)) },
+      { hotkey: ']', callback: () => setBrushSize((b) => Math.min(12, b + 1)) },
+    ],
+    { enabled: !isWalkMode },
+  )
 
   // Label div refs — updated imperatively each frame (avoids React re-renders at 60fps)
   const footprintLabelRef = useRef<HTMLDivElement>(null)
@@ -434,14 +455,17 @@ export default function VoxelCanvas({
 
     function selectObject(id: string) {
       selectedObjId = id
+      selectedObjIdRef.current = id
       const obj = objectManager.objects.get(id)!
       gizmoRef.current?.attach(id, obj.position, obj.rotation)
     }
 
     function deselectObject() {
       selectedObjId = null
+      selectedObjIdRef.current = null
       gizmoRef.current?.detach()
     }
+    deselectObjectRef.current = deselectObject
 
     function removeObject(id: string) {
       const group = objectMeshes.get(id)
@@ -574,6 +598,93 @@ export default function VoxelCanvas({
 
     enterWalkRef.current = enterWalkModeInner
     exitWalkRef.current = exitWalkModeInner
+
+    // ── Undo stack ────────────────────────────────────────────────────────────
+    type UndoRecord =
+      | { kind: 'terrain'; chunks: Map<string, Uint8Array> }
+      | { kind: 'object-place'; id: string }
+      | {
+          kind: 'object-delete'
+          obj: { id: string; type: ObjectType; position: THREE.Vector3; rotation: number }
+        }
+      | { kind: 'object-transform'; id: string; position: THREE.Vector3; rotation: number }
+
+    const MAX_UNDO = 50
+    const undoStack: UndoRecord[] = []
+
+    function pushUndo(record: UndoRecord) {
+      undoStack.push(record)
+      if (undoStack.length > MAX_UNDO) undoStack.shift()
+      setCanUndo(true)
+    }
+
+    function getAffectedChunkKeys(vx: number, vz: number, radius: number): Set<string> {
+      const keys = new Set<string>()
+      for (const [x, z] of getColumnsInRadius(vx, vz, radius)) {
+        keys.add(`${Math.floor(x / CHUNK_SIZE)},${Math.floor(z / CHUNK_SIZE)}`)
+      }
+      return keys
+    }
+
+    function snapshotChunks(keys: Set<string>, snapshot: Map<string, Uint8Array>) {
+      for (const key of keys) {
+        if (snapshot.has(key)) continue
+        const [cx, cz] = key.split(',').map(Number)
+        const chunk = world.getChunk(cx, cz)
+        if (chunk) snapshot.set(key, new Uint8Array(chunk.data))
+      }
+    }
+
+    function undo() {
+      const record = undoStack.pop()
+      if (!record) return
+      setCanUndo(undoStack.length > 0)
+      if (record.kind === 'terrain') {
+        for (const [key, data] of record.chunks) {
+          const [cx, cz] = key.split(',').map(Number)
+          const chunk = world.getChunk(cx, cz)
+          if (chunk) {
+            chunk.data.set(data)
+            chunk.isDirty = true
+          }
+        }
+      } else if (record.kind === 'object-place') {
+        if (selectedObjId === record.id) deselectObject()
+        removeObject(record.id)
+      } else if (record.kind === 'object-delete') {
+        const o = record.obj
+        const courseObj: CourseObject = {
+          id: o.id,
+          type: o.type,
+          position: o.position.clone(),
+          rotation: o.rotation,
+        }
+        objectManager.objects.set(o.id, courseObj)
+        const group = createObjectMesh(o.type)
+        group.position.copy(o.position)
+        group.rotation.y = o.rotation
+        addObjectMesh(o.id, group)
+      } else if (record.kind === 'object-transform') {
+        const obj = objectManager.objects.get(record.id)
+        if (obj) {
+          obj.position.copy(record.position)
+          obj.rotation = record.rotation
+          const grp = objectMeshes.get(record.id)
+          if (grp) {
+            grp.position.copy(record.position)
+            grp.rotation.y = record.rotation
+          }
+          if (selectedObjId === record.id) gizmo.attach(record.id, record.position, record.rotation)
+        }
+      }
+      markMutated()
+    }
+
+    undoCallbackRef.current = undo
+
+    // Stroke and gizmo-drag undo accumulators (reset each gesture)
+    let strokeSnapshot: Map<string, Uint8Array> | null = null
+    let preDragTransform: { id: string; position: THREE.Vector3; rotation: number } | null = null
 
     // ── Brush highlight ───────────────────────────────────────────────────────
     const MAX_HIGHLIGHT = 512
@@ -774,6 +885,15 @@ export default function VoxelCanvas({
 
         // 1. Try gizmo handles first
         if (gizmo.onPointerDown(ndc, camera)) {
+          if (selectedObjId) {
+            const obj = objectManager.objects.get(selectedObjId)
+            if (obj)
+              preDragTransform = {
+                id: selectedObjId,
+                position: obj.position.clone(),
+                rotation: obj.rotation,
+              }
+          }
           isLeftDown = true
           container.setPointerCapture(e.pointerId)
           return
@@ -802,6 +922,7 @@ export default function VoxelCanvas({
           group.position.copy(obj.position)
           group.rotation.y = obj.rotation
           addObjectMesh(obj.id, group)
+          pushUndo({ kind: 'object-place', id: obj.id })
           deselectObject()
           markMutated()
         }
@@ -812,7 +933,11 @@ export default function VoxelCanvas({
       isLeftDown = true
       container.setPointerCapture(e.pointerId)
       const hit = worldCoordsFromHit(e)
-      if (hit) applyTool(hit.vx, hit.vy, hit.vz)
+      if (hit) {
+        strokeSnapshot = new Map()
+        snapshotChunks(getAffectedChunkKeys(hit.vx, hit.vz, brushRef.current), strokeSnapshot)
+        applyTool(hit.vx, hit.vy, hit.vz)
+      }
     }
 
     function onPointerMove(e: PointerEvent) {
@@ -855,7 +980,11 @@ export default function VoxelCanvas({
       if (!isLeftDown || !(e.buttons & 1)) return
       if (tool === 'orbit') return
       const hit = worldCoordsFromHit(e)
-      if (hit) applyTool(hit.vx, hit.vy, hit.vz)
+      if (hit) {
+        if (strokeSnapshot)
+          snapshotChunks(getAffectedChunkKeys(hit.vx, hit.vz, brushRef.current), strokeSnapshot)
+        applyTool(hit.vx, hit.vy, hit.vz)
+      }
     }
 
     function onPointerUp(e: PointerEvent) {
@@ -867,9 +996,17 @@ export default function VoxelCanvas({
         return
       }
       isLeftDown = false
+      if (strokeSnapshot && strokeSnapshot.size > 0) {
+        pushUndo({ kind: 'terrain', chunks: strokeSnapshot })
+      }
+      strokeSnapshot = null
       if (toolRef.current === 'object') {
-        if (gizmo.isDragging) markMutated()
+        if (gizmo.isDragging) {
+          markMutated()
+          if (preDragTransform) pushUndo({ kind: 'object-transform', ...preDragTransform })
+        }
         gizmo.onPointerUp()
+        preDragTransform = null
       }
     }
 
@@ -895,14 +1032,37 @@ export default function VoxelCanvas({
         e.preventDefault()
       }
       if (
+        (e.code === 'Delete' || e.code === 'Backspace') &&
+        !isWalkModeRef.current &&
         !readOnlyRef.current &&
-        (e.key === 'Delete' || e.key === 'Backspace') &&
-        selectedObjId &&
-        toolRef.current === 'object'
+        toolRef.current === 'object' &&
+        selectedObjId
       ) {
+        e.preventDefault()
+        const obj = objectManager.objects.get(selectedObjId)
+        if (obj) {
+          pushUndo({
+            kind: 'object-delete',
+            obj: {
+              id: obj.id,
+              type: obj.type,
+              position: obj.position.clone(),
+              rotation: obj.rotation,
+            },
+          })
+        }
         removeObject(selectedObjId)
         deselectObject()
         markMutated()
+      }
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key === 'z' &&
+        !isWalkModeRef.current &&
+        !readOnlyRef.current
+      ) {
+        e.preventDefault()
+        undo()
       }
     }
 
@@ -1161,6 +1321,9 @@ export default function VoxelCanvas({
       objectManagerRef.current = null
       addObjectMeshRef.current = null
       removeObjectRef.current = null
+      deselectObjectRef.current = null
+      selectedObjIdRef.current = null
+      undoCallbackRef.current = null
       cancelAnimationFrame(frameId)
       walkController.disable()
       container.removeEventListener('pointerdown', onPointerDown)
@@ -1208,6 +1371,8 @@ export default function VoxelCanvas({
           showGolfer={showGolfer}
           onGolferToggle={() => setShowGolfer((s) => !s)}
           onEnterWalk={() => enterWalkRef.current?.()}
+          canUndo={canUndo}
+          onUndo={() => undoCallbackRef.current?.()}
         />
       )}
       {isWalkMode && (
