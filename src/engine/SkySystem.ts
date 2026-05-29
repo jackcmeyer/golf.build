@@ -187,11 +187,7 @@ export class SkySystem {
       this.cloudOffsets[i].y += windDir.y * cfg.speed * windSpeed * dt
       this.cloudMats[i].uniforms.uOffset.value.copy(this.cloudOffsets[i])
       this.cloudMats[i].uniforms.uOpacity.value = cfg.baseOpacity * nightFade
-
-      const col = this.cloudMats[i].uniforms.uColor.value as THREE.Color
-      if (timeOfDay < 7.5) col.set(1.0, 0.78, 0.65)
-      else if (timeOfDay > 17.5) col.set(0.95, 0.6, 0.35)
-      else col.set(1, 1, 1)
+      ;(this.cloudMats[i].uniforms.uColor.value as THREE.Color).set(1, 1, 1)
     }
   }
 

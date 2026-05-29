@@ -82,14 +82,14 @@ export function getSkyColors(timeOfDay: number): [THREE.Color, THREE.Color, THRE
   return [new THREE.Color(0x060618), new THREE.Color(0x0e0e22), new THREE.Color(0x0c0c18)]
 }
 
-// Fog/background — tightly coupled to sky ground color so horizon blends cleanly
+// Fog/background — neutral grey-blue at all times so distant terrain doesn't tint
 export function getFogColor(timeOfDay: number): THREE.Color {
   if (timeOfDay < 5 || timeOfDay > 22) return new THREE.Color(0x060612)
-  if (timeOfDay < 7) return new THREE.Color(0xa09080) // dawn: warm grey
+  if (timeOfDay < 7) return new THREE.Color(0x909090) // dawn: neutral grey
   if (timeOfDay < 10) return new THREE.Color(0x90b4c8) // morning: pale blue
   if (timeOfDay < 16) return new THREE.Color(0x8ab4d4) // midday: sky blue
-  if (timeOfDay < 19) return new THREE.Color(0x907060) // golden hour: warm grey-brown
-  if (timeOfDay < 21) return new THREE.Color(0x604848) // dusk: dark warm grey
+  if (timeOfDay < 19) return new THREE.Color(0x8898a8) // golden hour: neutral blue-grey
+  if (timeOfDay < 21) return new THREE.Color(0x505060) // dusk: neutral dark grey
   return new THREE.Color(0x060612)
 }
 
