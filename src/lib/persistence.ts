@@ -66,6 +66,11 @@ export async function loadLocalCourse(courseId: string): Promise<LoadedCourseDat
   }
 }
 
+export async function deleteLocalCourse(courseId: string): Promise<void> {
+  const db = await getLocalDb()
+  await db.delete('courses', courseId)
+}
+
 // ── Remote (Supabase) persistence ─────────────────────────────────────────────
 
 function uint8ToBase64(data: Uint8Array): string {
@@ -174,4 +179,22 @@ export async function loadCourseData(courseId: string): Promise<LoadedCourseData
   }))
 
   return { chunks, objects }
+}
+
+export async function deleteCourse(courseId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase not configured')
+
+  const { error: objErr } = await supabase.from('course_objects').delete().eq('course_id', courseId)
+  if (objErr) throw objErr
+
+  const { error: chunkErr } = await supabase
+    .from('course_chunks')
+    .delete()
+    .eq('course_id', courseId)
+  if (chunkErr) throw chunkErr
+
+  const { error: courseErr } = await supabase.from('courses').delete().eq('id', courseId)
+  if (courseErr) throw courseErr
+
+  await supabase.storage.from('thumbnails').remove([`${courseId}.jpg`])
 }

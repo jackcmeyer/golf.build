@@ -6,6 +6,8 @@ interface Props {
   userId: string | null
   onCreate: (courseId: string, preset: TerrainPreset) => void
   onClose: () => void
+  // When set, the modal restarts the current course instead of creating a new one.
+  onRestart?: (preset: TerrainPreset) => void
 }
 
 type Mode = 'terrain' | 'blank'
@@ -35,7 +37,7 @@ const PRESETS: Preset[] = [
   { id: 'desert', label: 'Desert', desc: 'Waste areas, sand bunkers, bare terrain', icon: '☀️' },
 ]
 
-export function OnboardingModal({ userId, onCreate, onClose }: Props) {
+export function OnboardingModal({ userId, onCreate, onClose, onRestart }: Props) {
   const [mode, setMode] = useState<Mode>('terrain')
   const [selectedPreset, setSelectedPreset] = useState<TerrainPreset>('default')
   const [creating, setCreating] = useState(false)
@@ -43,6 +45,10 @@ export function OnboardingModal({ userId, onCreate, onClose }: Props) {
   async function handleCreate() {
     if (creating) return
     const preset: TerrainPreset = mode === 'blank' ? 'blank' : selectedPreset
+    if (onRestart) {
+      onRestart(preset)
+      return
+    }
     const courseId = crypto.randomUUID()
     if (!supabase || !userId) {
       onCreate(courseId, preset)
@@ -97,7 +103,25 @@ export function OnboardingModal({ userId, onCreate, onClose }: Props) {
           gap: 18,
         }}
       >
-        <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.04em' }}>New Course</div>
+        <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.04em' }}>
+          {onRestart ? 'Restart Course' : 'New Course'}
+        </div>
+
+        {onRestart && (
+          <div
+            style={{
+              fontSize: 11,
+              color: 'rgba(248,180,120,0.8)',
+              background: 'rgba(248,180,120,0.08)',
+              border: '1px solid rgba(248,180,120,0.2)',
+              borderRadius: 8,
+              padding: '10px 12px',
+              lineHeight: 1.6,
+            }}
+          >
+            This overwrites your current course and can't be undone.
+          </div>
+        )}
 
         {/* Mode toggle */}
         <div style={{ display: 'flex', gap: 8 }}>
@@ -213,7 +237,7 @@ export function OnboardingModal({ userId, onCreate, onClose }: Props) {
               letterSpacing: '0.03em',
             }}
           >
-            {creating ? 'Creating…' : 'Create course →'}
+            {onRestart ? 'Restart course →' : creating ? 'Creating…' : 'Create course →'}
           </button>
         </div>
       </div>

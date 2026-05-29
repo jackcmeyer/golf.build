@@ -6,7 +6,10 @@ import {
   Minus,
   Paintbrush,
   Redo2,
+  RotateCcw,
+  Settings,
   Shapes,
+  Trash2,
   Undo2,
   Waves,
 } from 'lucide-react'
@@ -16,6 +19,12 @@ import { ObjectType, OBJECT_NAMES } from '../engine/objectTypes'
 import { Slider } from '@/components/ui/slider'
 import { Separator } from '@/components/ui/separator'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const SCULPT_TOOLS: { id: ToolMode; label: string; key: string; Icon: LucideIcon }[] = [
   { id: 'raise', label: 'Raise', key: 'R', Icon: ArrowUp },
@@ -102,6 +111,8 @@ interface ToolbarProps {
   showGolfer: boolean
   onGolferToggle: () => void
   onEnterWalk: () => void
+  onRestart?: () => void
+  onDelete?: () => void
   canUndo: boolean
   onUndo: () => void
   canRedo: boolean
@@ -128,6 +139,8 @@ export function Toolbar({
   showGolfer,
   onGolferToggle,
   onEnterWalk,
+  onRestart,
+  onDelete,
   canUndo,
   onUndo,
   canRedo,
@@ -139,7 +152,7 @@ export function Toolbar({
 
   return (
     <div className="pointer-events-auto absolute top-4 left-4 flex min-w-[152px] flex-col gap-2.5 rounded-xl border border-white/[0.09] bg-black/[0.88] p-3 font-mono text-sm backdrop-blur-sm select-none">
-      {/* Undo / Redo */}
+      {/* Undo / Redo / Settings */}
       <div className="flex gap-1.5">
         <button
           onClick={onUndo}
@@ -157,6 +170,42 @@ export function Toolbar({
         >
           <Redo2 size={13} strokeWidth={1.75} className="text-white/50" />
         </button>
+        {(onRestart || onDelete) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                title="Course settings"
+                className="flex flex-1 cursor-pointer items-center justify-center rounded border border-white/[0.08] bg-white/[0.04] py-1 transition-all hover:bg-white/[0.08] hover:text-white/80"
+              >
+                <Settings size={13} strokeWidth={1.75} className="text-white/50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="min-w-44 rounded-lg border border-white/[0.12] bg-black/[0.92] p-1 font-mono text-white/70 backdrop-blur-sm"
+            >
+              {onRestart && (
+                <DropdownMenuItem
+                  onClick={onRestart}
+                  className="cursor-pointer rounded px-2 py-1.5 text-xs tracking-wide focus:bg-white/[0.08] focus:text-white/90"
+                >
+                  <RotateCcw size={13} strokeWidth={1.75} />
+                  Restart course
+                </DropdownMenuItem>
+              )}
+              {onDelete && (
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={onDelete}
+                  className="cursor-pointer rounded px-2 py-1.5 text-xs tracking-wide text-red-400/80 focus:bg-red-500/15 focus:text-red-300"
+                >
+                  <Trash2 size={13} strokeWidth={1.75} />
+                  Delete course
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <Separator className="bg-white/[0.08]" />

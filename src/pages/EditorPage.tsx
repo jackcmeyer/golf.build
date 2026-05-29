@@ -3,7 +3,18 @@ import { useParams, useNavigate } from '@tanstack/react-router'
 import VoxelCanvas, { type SaveStatus } from '../components/VoxelCanvas'
 import { OnboardingModal } from '../components/OnboardingModal'
 import { supabase } from '../lib/supabase'
+import { deleteCourse, deleteLocalCourse } from '../lib/persistence'
 import type { TerrainPreset } from '../engine/terrainPresets'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 const LAST_COURSE_KEY = 'golf_build:last_course_id'
 
@@ -18,7 +29,11 @@ export function EditorPage() {
   const [guestPreset, setGuestPreset] = useState<TerrainPreset>('default')
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [isPublished, setIsPublished] = useState(false)
+  const [restarting, setRestarting] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const screenshotCbRef = useRef<(() => Promise<Blob | null>) | null>(null)
+  const restartCbRef = useRef<((preset: TerrainPreset) => void) | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -125,6 +140,30 @@ export function EditorPage() {
     navigate({ to: '/editor/$courseId', params: { courseId: newCourseId } })
   }
 
+  function handleRestart(preset: TerrainPreset) {
+    restartCbRef.current?.(preset)
+    setRestarting(false)
+  }
+
+  async function handleDelete() {
+    if (!courseId || deleting) return
+    setDeleting(true)
+    try {
+      if (supabase && userId) {
+        await deleteCourse(courseId)
+      } else {
+        await deleteLocalCourse(courseId)
+      }
+      if (localStorage.getItem(LAST_COURSE_KEY) === courseId) {
+        localStorage.removeItem(LAST_COURSE_KEY)
+      }
+      setConfirmingDelete(false)
+      navigate({ to: '/editor' })
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const ghostBtn: React.CSSProperties = {
     background: 'transparent',
     border: '1px solid rgba(255,255,255,0.07)',
@@ -145,6 +184,9 @@ export function EditorPage() {
           initialPreset={guestPreset}
           readOnly={false}
           screenshotCbRef={screenshotCbRef}
+          restartCbRef={restartCbRef}
+          onRequestRestart={() => setRestarting(true)}
+          onRequestDelete={() => setConfirmingDelete(true)}
           onSaveStatus={setSaveStatus}
         />
       )}
@@ -201,6 +243,39 @@ export function EditorPage() {
           onClose={() => setPageState('ready')}
         />
       )}
+
+      {restarting && (
+        <OnboardingModal
+          userId={userId}
+          onCreate={handleOnboardingCreate}
+          onRestart={handleRestart}
+          onClose={() => setRestarting(false)}
+        />
+      )}
+
+      <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this course?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the world and everything in it. This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleDelete()
+              }}
+              disabled={deleting}
+              className="bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600"
+            >
+              {deleting ? 'Deleting…' : 'Delete course'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

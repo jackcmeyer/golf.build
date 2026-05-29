@@ -40,6 +40,9 @@ interface VoxelCanvasProps {
   initialPreset?: TerrainPreset
   readOnly?: boolean
   screenshotCbRef?: React.MutableRefObject<(() => Promise<Blob | null>) | null>
+  restartCbRef?: React.MutableRefObject<((preset: TerrainPreset) => void) | null>
+  onRequestRestart?: () => void
+  onRequestDelete?: () => void
   onSaveStatus?: (status: SaveStatus) => void
 }
 
@@ -69,6 +72,9 @@ export default function VoxelCanvas({
   initialPreset,
   readOnly = false,
   screenshotCbRef,
+  restartCbRef,
+  onRequestRestart,
+  onRequestDelete,
   onSaveStatus,
 }: VoxelCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -86,6 +92,7 @@ export default function VoxelCanvas({
   const initialPresetRef = useRef(initialPreset)
   const readOnlyRef = useRef(readOnly)
   const screenshotCbPropRef = useRef(screenshotCbRef)
+  const restartCbPropRef = useRef(restartCbRef)
 
   // Auto-save state
   const lastMutationTimeRef = useRef(0)
@@ -1398,6 +1405,25 @@ export default function VoxelCanvas({
         })
     }
 
+    function restart(preset: TerrainPreset) {
+      for (const id of [...objectManager.objects.keys()]) removeObject(id)
+      deselectObject()
+      for (const chunk of world.chunks.values()) {
+        chunk.data.fill(0)
+        chunk.isDirty = true
+      }
+      initTerrain(world, preset)
+      for (const chunk of world.chunks.values()) chunk.isDirty = true
+      undoStack.length = 0
+      redoStack.length = 0
+      setCanUndo(false)
+      setCanRedo(false)
+      markMutated()
+      triggerSave()
+    }
+    const restartHolder = restartCbPropRef.current
+    if (restartHolder) restartHolder.current = restart
+
     function onVisibilityChange() {
       if (document.visibilityState === 'hidden') triggerSave()
     }
@@ -1418,6 +1444,7 @@ export default function VoxelCanvas({
       objectManagerRef.current = null
       addObjectMeshRef.current = null
       removeObjectRef.current = null
+      if (restartHolder) restartHolder.current = null
       deselectObjectRef.current = null
       selectedObjIdRef.current = null
       undoCallbackRef.current = null
@@ -1469,6 +1496,8 @@ export default function VoxelCanvas({
           showGolfer={showGolfer}
           onGolferToggle={() => setShowGolfer((s) => !s)}
           onEnterWalk={() => enterWalkRef.current?.()}
+          onRestart={onRequestRestart}
+          onDelete={onRequestDelete}
           canUndo={canUndo}
           onUndo={() => undoCallbackRef.current?.()}
           canRedo={canRedo}
