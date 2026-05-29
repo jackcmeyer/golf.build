@@ -54,14 +54,14 @@ export function getAmbientIntensity(timeOfDay: number): number {
 
 // [topColor, horizonColor, groundColor] — sky sphere gradient
 // Rule: ground color must stay close to getFogColor() to avoid a harsh seam at the horizon.
-// Rule: top must be a readable blue so the gradient has character, not just a dark void.
+// Rule: horizon must stay in the blue-grey family — no warm orange/brown or it fills the orbital view background.
 export function getSkyColors(timeOfDay: number): [THREE.Color, THREE.Color, THREE.Color] {
   if (timeOfDay < 5 || timeOfDay > 22) {
     return [new THREE.Color(0x040415), new THREE.Color(0x080818), new THREE.Color(0x060612)]
   }
   if (timeOfDay < 7) {
-    // Dawn: medium navy top, muted rose-brown horizon, warm-grey ground
-    return [new THREE.Color(0x223068), new THREE.Color(0x907055), new THREE.Color(0xa09080)]
+    // Dawn: medium navy, pale blue-grey horizon, neutral ground
+    return [new THREE.Color(0x223068), new THREE.Color(0x7088a8), new THREE.Color(0x909090)]
   }
   if (timeOfDay < 9) {
     // Morning: clear blue, pale horizon, light blue-grey ground
@@ -72,12 +72,12 @@ export function getSkyColors(timeOfDay: number): [THREE.Color, THREE.Color, THRE
     return [new THREE.Color(0x1a6aaa), new THREE.Color(0x4a9ad4), new THREE.Color(0x78aec8)]
   }
   if (timeOfDay < 18.5) {
-    // Golden hour: visible medium-blue top, warm-brown horizon, warm-grey ground
-    return [new THREE.Color(0x2a5090), new THREE.Color(0x8a6040), new THREE.Color(0x907060)]
+    // Late afternoon: slightly deeper blue, muted blue-grey horizon, neutral ground
+    return [new THREE.Color(0x1a5080), new THREE.Color(0x4880a8), new THREE.Color(0x8898a8)]
   }
   if (timeOfDay < 20.5) {
-    // Dusk: dark but visible navy, muted dark-rust horizon, dark warm-grey ground
-    return [new THREE.Color(0x161632), new THREE.Color(0x583828), new THREE.Color(0x604848)]
+    // Dusk: dark navy, dark blue-grey horizon, dark neutral ground
+    return [new THREE.Color(0x101828), new THREE.Color(0x283848), new THREE.Color(0x505060)]
   }
   return [new THREE.Color(0x060618), new THREE.Color(0x0e0e22), new THREE.Color(0x0c0c18)]
 }
