@@ -27,6 +27,7 @@ import { ObjectType, OBJECT_NAMES, OBJECT_FOOTPRINT } from '../engine/objectType
 import { ObjectManager } from '../engine/ObjectManager'
 import { createObjectMesh, updateWindMaterials, buildGolfer } from '../engine/ObjectMeshFactory'
 import { Gizmo } from '../engine/Gizmo'
+import { WalkController } from '../engine/WalkController'
 
 const HALF_W = (WORLD_WIDTH_VOXELS / 2) * VOXEL_SIZE
 const HALF_D = (WORLD_DEPTH_VOXELS / 2) * VOXEL_SIZE
@@ -61,6 +62,8 @@ export default function VoxelCanvas() {
   const [timeOfDay, setTimeOfDay] = useState(14.0)
   const [selectedObjType, setSelectedObjType] = useState<ObjectType>(ObjectType.FLAGSTICK_CUP)
   const [showGolfer, setShowGolfer] = useState(false)
+  const [isWalkMode, setIsWalkMode] = useState(false)
+  const [isPointerLocked, setIsPointerLocked] = useState(false)
 
   const toolRef = useRef(toolMode)
   const brushRef = useRef(brushSize)
@@ -68,6 +71,21 @@ export default function VoxelCanvas() {
   const timeOfDayRef = useRef(timeOfDay)
   const selectedObjTypeRef = useRef(selectedObjType)
   const showGolferRef = useRef(showGolfer)
+  const isWalkModeRef = useRef(false)
+  const walkControllerRef = useRef<WalkController | null>(null)
+  const enterWalkRef = useRef<(() => void) | null>(null)
+  const exitWalkRef = useRef<(() => void) | null>(null)
+
+  type TweenState = {
+    startPos: THREE.Vector3
+    endPos: THREE.Vector3
+    startQuat: THREE.Quaternion
+    endQuat: THREE.Quaternion
+    elapsed: number
+    duration: number
+    onComplete: () => void
+  }
+  const tweenRef = useRef<TweenState | null>(null)
 
   useEffect(() => {
     toolRef.current = toolMode
@@ -206,6 +224,11 @@ export default function VoxelCanvas() {
     function getLODForChunk(cx: number, cz: number): number {
       const centerX = (cx + 0.5) * CHUNK_SIZE * VOXEL_SIZE - HALF_W
       const centerZ = (cz + 0.5) * CHUNK_SIZE * VOXEL_SIZE - HALF_D
+      if (isWalkModeRef.current) {
+        const dx = camera.position.x - centerX
+        const dz = camera.position.z - centerZ
+        return Math.sqrt(dx * dx + dz * dz) < 80 ? 0 : 1
+      }
       const dx = controls.target.x - centerX
       const dz = controls.target.z - centerZ
       return Math.sqrt(dx * dx + dz * dz) < LOD_NEAR_DIST ? 0 : 1
@@ -313,6 +336,108 @@ export default function VoxelCanvas() {
     golferGroup.visible = false
     scene.add(golferGroup)
     golferGroupRef.current = golferGroup
+
+    // ── Walk mode ─────────────────────────────────────────────────────────────
+    const walkController = new WalkController(camera, renderer.domElement, world)
+    walkControllerRef.current = walkController
+    walkController.onLockChange = (locked) => setIsPointerLocked(locked)
+    walkController.onExitRequest = () => exitWalkModeInner()
+
+    function smoothstep(t: number): number {
+      return t * t * (3 - 2 * t)
+    }
+
+    function getEntryPoint(): THREE.Vector3 {
+      for (const obj of objectManager.getAll()) {
+        if (
+          obj.type === ObjectType.TEE_MARKER_RED ||
+          obj.type === ObjectType.TEE_MARKER_WHITE ||
+          obj.type === ObjectType.TEE_MARKER_BLUE
+        ) {
+          const vx = Math.max(
+            0,
+            Math.min(
+              WORLD_WIDTH_VOXELS - 1,
+              Math.floor(obj.position.x / VOXEL_SIZE + WORLD_WIDTH_VOXELS / 2),
+            ),
+          )
+          const vz = Math.max(
+            0,
+            Math.min(
+              WORLD_DEPTH_VOXELS - 1,
+              Math.floor(obj.position.z / VOXEL_SIZE + WORLD_DEPTH_VOXELS / 2),
+            ),
+          )
+          const h = world.getSurfaceHeight(vx, vz)
+          const groundY = (h >= 0 ? h + 1 : 1) * VOXEL_SIZE
+          return new THREE.Vector3(obj.position.x, groundY + 1.8, obj.position.z)
+        }
+      }
+      const h = world.getSurfaceHeight(WORLD_WIDTH_VOXELS / 2, WORLD_DEPTH_VOXELS / 2)
+      const groundY = (h >= 0 ? h + 1 : 1) * VOXEL_SIZE
+      return new THREE.Vector3(0, groundY + 1.8, 0)
+    }
+
+    function enterWalkModeInner() {
+      if (isWalkModeRef.current || tweenRef.current) return
+      const entry = getEntryPoint()
+      controls.enabled = false
+      gizmo.detach()
+      golferGroup.visible = false
+      highlightMesh.count = 0
+      highlightMesh.instanceMatrix.needsUpdate = true
+
+      const endQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0, 'YXZ'))
+      tweenRef.current = {
+        startPos: camera.position.clone(),
+        endPos: entry,
+        startQuat: camera.quaternion.clone(),
+        endQuat,
+        elapsed: 0,
+        duration: 2.5,
+        onComplete: () => {
+          isWalkModeRef.current = true
+          setIsWalkMode(true)
+          walkController.yaw = 0
+          walkController.pitch = 0
+          walkController.enable()
+          walkController.requestPointerLock()
+        },
+      }
+    }
+
+    function exitWalkModeInner() {
+      if (!isWalkModeRef.current) return
+      const camPos = camera.position.clone()
+      const camQuat = camera.quaternion.clone()
+
+      walkController.disable()
+      isWalkModeRef.current = false
+      setIsWalkMode(false)
+      setIsPointerLocked(false)
+
+      const endPos = new THREE.Vector3(camPos.x, camPos.y + 220, camPos.z + 380)
+      controls.target.set(camPos.x, camPos.y - 1.8, camPos.z)
+
+      const tempCam = new THREE.PerspectiveCamera()
+      tempCam.position.copy(endPos)
+      tempCam.lookAt(controls.target)
+
+      tweenRef.current = {
+        startPos: camPos,
+        endPos,
+        startQuat: camQuat,
+        endQuat: tempCam.quaternion.clone(),
+        elapsed: 0,
+        duration: 1.5,
+        onComplete: () => {
+          controls.enabled = true
+        },
+      }
+    }
+
+    enterWalkRef.current = enterWalkModeInner
+    exitWalkRef.current = exitWalkModeInner
 
     // ── Brush highlight ───────────────────────────────────────────────────────
     const MAX_HIGHLIGHT = 512
@@ -477,6 +602,7 @@ export default function VoxelCanvas() {
 
     // ── Pointer event handlers ─────────────────────────────────────────────────
     function onPointerDown(e: PointerEvent) {
+      if (isWalkModeRef.current) return
       if (e.button !== 0) return
       const tool = toolRef.current
       if (tool === 'orbit') return
@@ -527,6 +653,7 @@ export default function VoxelCanvas() {
     }
 
     function onPointerMove(e: PointerEvent) {
+      if (isWalkModeRef.current) return
       const tool = toolRef.current
 
       if (tool === 'object') {
@@ -561,6 +688,7 @@ export default function VoxelCanvas() {
     }
 
     function onPointerUp(e: PointerEvent) {
+      if (isWalkModeRef.current) return
       if (e.button !== 0) return
       isLeftDown = false
       if (toolRef.current === 'object') {
@@ -639,6 +767,22 @@ export default function VoxelCanvas() {
       const dt = clock.getDelta()
       const elapsed = clock.getElapsedTime()
       const tod = timeOfDayRef.current
+      const inWalk = isWalkModeRef.current
+
+      // Cinematic tween
+      const tween = tweenRef.current
+      if (tween) {
+        tween.elapsed = Math.min(tween.elapsed + dt, tween.duration)
+        const t = smoothstep(tween.elapsed / tween.duration)
+        camera.position.lerpVectors(tween.startPos, tween.endPos, t)
+        camera.quaternion.slerpQuaternions(tween.startQuat, tween.endQuat, t)
+        if (tween.elapsed >= tween.duration) {
+          tweenRef.current = null
+          tween.onComplete()
+        }
+      } else if (inWalk) {
+        walkController.update(dt)
+      }
 
       // Rebuild dirty chunks + LOD
       for (const [key, chunk] of world.chunks) {
@@ -648,6 +792,32 @@ export default function VoxelCanvas() {
           rebuildChunk(key, cx, cz, lod)
         }
       }
+
+      // Walk mode: hide far chunks, suppress outlines
+      if (inWalk) {
+        for (const [key, entry] of chunkMap) {
+          const [cx, cz] = key.split(',').map(Number)
+          const centerX = (cx + 0.5) * CHUNK_SIZE * VOXEL_SIZE - HALF_W
+          const centerZ = (cz + 0.5) * CHUNK_SIZE * VOXEL_SIZE - HALF_D
+          const dx = camera.position.x - centerX
+          const dz = camera.position.z - centerZ
+          const vis = Math.sqrt(dx * dx + dz * dz) < 220
+          entry.terrain.visible = vis
+          if (entry.outline) entry.outline.visible = false
+          if (entry.water) entry.water.visible = vis
+        }
+      } else {
+        for (const entry of chunkMap.values()) {
+          entry.terrain.visible = true
+          if (entry.outline) entry.outline.visible = true
+          if (entry.water) entry.water.visible = true
+        }
+      }
+
+      // Fog near/far — tighter in walk mode to hide LOD seam
+      const fog = scene.fog as THREE.Fog
+      fog.near = inWalk ? 180 : 1000
+      fog.far = inWalk ? 260 : 2000
 
       // Wind
       const windAngle = elapsed * 0.04
@@ -739,13 +909,14 @@ export default function VoxelCanvas() {
         hideLabel(el)
       }
 
-      controls.update()
+      if (!inWalk) controls.update()
       renderer.render(scene, camera)
     }
     animate()
 
     return () => {
       cancelAnimationFrame(frameId)
+      walkController.disable()
       container.removeEventListener('pointerdown', onPointerDown)
       container.removeEventListener('pointermove', onPointerMove)
       container.removeEventListener('pointerup', onPointerUp)
@@ -775,20 +946,129 @@ export default function VoxelCanvas() {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      <Toolbar
-        toolMode={toolMode}
-        onToolChange={setToolMode}
-        brushSize={brushSize}
-        onBrushChange={setBrushSize}
-        selectedSurface={selectedSurface}
-        onSurfaceChange={setSelectedSurface}
-        timeOfDay={timeOfDay}
-        onTimeOfDayChange={setTimeOfDay}
-        selectedObjType={selectedObjType}
-        onObjTypeChange={setSelectedObjType}
-        showGolfer={showGolfer}
-        onGolferToggle={() => setShowGolfer((s) => !s)}
-      />
+      {!isWalkMode && (
+        <Toolbar
+          toolMode={toolMode}
+          onToolChange={setToolMode}
+          brushSize={brushSize}
+          onBrushChange={setBrushSize}
+          selectedSurface={selectedSurface}
+          onSurfaceChange={setSelectedSurface}
+          timeOfDay={timeOfDay}
+          onTimeOfDayChange={setTimeOfDay}
+          selectedObjType={selectedObjType}
+          onObjTypeChange={setSelectedObjType}
+          showGolfer={showGolfer}
+          onGolferToggle={() => setShowGolfer((s) => !s)}
+          onEnterWalk={() => enterWalkRef.current?.()}
+        />
+      )}
+      {isWalkMode && (
+        <>
+          {/* Crosshair — always visible when locked */}
+          {isPointerLocked && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                pointerEvents: 'none',
+                color: 'rgba(255,255,255,0.7)',
+                fontSize: 20,
+                lineHeight: 1,
+                fontFamily: 'monospace',
+                textShadow: '0 0 4px rgba(0,0,0,0.8)',
+                userSelect: 'none',
+              }}
+            >
+              +
+            </div>
+          )}
+          {/* Unlock overlay — shown when pointer lock is released */}
+          {!isPointerLocked && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(0,0,0,0.55)',
+                backdropFilter: 'blur(2px)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 12,
+                  background: 'rgba(0,0,0,0.82)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: 12,
+                  padding: '24px 32px',
+                  fontFamily: 'monospace',
+                  color: 'rgba(255,255,255,0.8)',
+                  minWidth: 220,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.05em' }}>
+                  WALK MODE
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: 'rgba(255,255,255,0.4)',
+                    textAlign: 'center',
+                    lineHeight: 1.7,
+                  }}
+                >
+                  WASD — move
+                  <br />
+                  Shift — run
+                  <br />
+                  Mouse — look
+                  <br />
+                  Esc — release mouse
+                </div>
+                <button
+                  onClick={() => walkControllerRef.current?.requestPointerLock()}
+                  style={{
+                    background: 'rgba(34,197,94,0.18)',
+                    border: '1px solid rgba(34,197,94,0.4)',
+                    borderRadius: 6,
+                    color: 'rgba(134,239,172,0.9)',
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                    padding: '6px 16px',
+                    cursor: 'pointer',
+                    width: '100%',
+                  }}
+                >
+                  Click to capture mouse
+                </button>
+                <button
+                  onClick={() => exitWalkRef.current?.()}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 6,
+                    color: 'rgba(255,255,255,0.4)',
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                    padding: '6px 16px',
+                    cursor: 'pointer',
+                    width: '100%',
+                  }}
+                >
+                  Exit walk mode
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
       {/* Labels — updated imperatively in animate loop */}
       <div
         ref={footprintLabelRef}

@@ -89,6 +89,7 @@ interface ToolbarProps {
   onObjTypeChange: (t: ObjectType) => void
   showGolfer: boolean
   onGolferToggle: () => void
+  onEnterWalk: () => void
 }
 
 function formatHour(t: number): string {
@@ -110,6 +111,7 @@ export function Toolbar({
   onObjTypeChange,
   showGolfer,
   onGolferToggle,
+  onEnterWalk,
 }: ToolbarProps) {
   const isSculpt = toolMode !== 'orbit' && toolMode !== 'object'
   const isObject = toolMode === 'object'
@@ -282,6 +284,16 @@ export function Toolbar({
           <br />+ 2-finger zoom
         </p>
       )}
+
+      <Separator className="bg-white/[0.08]" />
+
+      {/* Walk mode entry */}
+      <button
+        onClick={onEnterWalk}
+        className="w-full cursor-pointer rounded border border-green-800/40 bg-green-900/20 py-1.5 text-center text-xs tracking-wide text-green-300/70 transition-all hover:bg-green-900/40 hover:text-green-200"
+      >
+        Walk mode
+      </button>
     </div>
   )
 }
