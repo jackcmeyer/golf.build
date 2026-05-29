@@ -103,7 +103,9 @@ export default function VoxelCanvas({
   const [isWalkMode, setIsWalkMode] = useState(false)
   const [isPointerLocked, setIsPointerLocked] = useState(false)
   const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
   const undoCallbackRef = useRef<(() => void) | null>(null)
+  const redoCallbackRef = useRef<(() => void) | null>(null)
 
   const toolRef = useRef(toolMode)
   const brushRef = useRef(brushSize)
@@ -260,6 +262,8 @@ export default function VoxelCanvas({
   }, [toolMode])
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
+  const isMac = /mac/i.test(navigator.platform) || /mac os/i.test(navigator.userAgent)
+
   useHotkeys(
     [
       { hotkey: 'O', callback: () => setToolMode('orbit') },
@@ -271,6 +275,31 @@ export default function VoxelCanvas({
       { hotkey: 'E', callback: () => !readOnlyRef.current && setToolMode('object') },
       { hotkey: '[', callback: () => setBrushSize((b) => Math.max(1, b - 1)) },
       { hotkey: ']', callback: () => setBrushSize((b) => Math.min(12, b + 1)) },
+      {
+        hotkey: 'Mod+Z',
+        callback: () => !readOnlyRef.current && undoCallbackRef.current?.(),
+        options: { preventDefault: true },
+      },
+      {
+        hotkey: 'Mod+Shift+Z',
+        callback: () => !readOnlyRef.current && redoCallbackRef.current?.(),
+        options: { preventDefault: true },
+      },
+      // On Mac, also accept explicit Ctrl+Z / Ctrl+Shift+Z (Mod resolves to Cmd there)
+      ...(isMac
+        ? [
+            {
+              hotkey: 'Control+Z' as const,
+              callback: () => !readOnlyRef.current && undoCallbackRef.current?.(),
+              options: { preventDefault: true },
+            },
+            {
+              hotkey: 'Control+Shift+Z' as const,
+              callback: () => !readOnlyRef.current && redoCallbackRef.current?.(),
+              options: { preventDefault: true },
+            },
+          ]
+        : []),
     ],
     { enabled: !isWalkMode },
   )
@@ -599,23 +628,30 @@ export default function VoxelCanvas({
     enterWalkRef.current = enterWalkModeInner
     exitWalkRef.current = exitWalkModeInner
 
-    // ── Undo stack ────────────────────────────────────────────────────────────
-    type UndoRecord =
+    // ── Undo / redo stack ─────────────────────────────────────────────────────
+    // Each record describes the action to apply (action-based, symmetric).
+    type HistoryRecord =
       | { kind: 'terrain'; chunks: Map<string, Uint8Array> }
-      | { kind: 'object-place'; id: string }
+      | { kind: 'object-remove'; id: string }
       | {
-          kind: 'object-delete'
-          obj: { id: string; type: ObjectType; position: THREE.Vector3; rotation: number }
+          kind: 'object-add'
+          id: string
+          type: ObjectType
+          position: THREE.Vector3
+          rotation: number
         }
       | { kind: 'object-transform'; id: string; position: THREE.Vector3; rotation: number }
 
     const MAX_UNDO = 50
-    const undoStack: UndoRecord[] = []
+    const undoStack: HistoryRecord[] = []
+    const redoStack: HistoryRecord[] = []
 
-    function pushUndo(record: UndoRecord) {
+    function pushUndo(record: HistoryRecord) {
       undoStack.push(record)
       if (undoStack.length > MAX_UNDO) undoStack.shift()
+      redoStack.length = 0
       setCanUndo(true)
+      setCanRedo(false)
     }
 
     function getAffectedChunkKeys(vx: number, vz: number, radius: number): Set<string> {
@@ -635,11 +671,17 @@ export default function VoxelCanvas({
       }
     }
 
-    function undo() {
-      const record = undoStack.pop()
-      if (!record) return
-      setCanUndo(undoStack.length > 0)
+    // Apply a history record and push its inverse onto `pushTo`.
+    // Used symmetrically for both undo (pushTo=redoStack) and redo (pushTo=undoStack).
+    function applyRecord(record: HistoryRecord, pushTo: HistoryRecord[]) {
       if (record.kind === 'terrain') {
+        const forward: Map<string, Uint8Array> = new Map()
+        for (const key of record.chunks.keys()) {
+          const [cx, cz] = key.split(',').map(Number)
+          const chunk = world.getChunk(cx, cz)
+          if (chunk) forward.set(key, new Uint8Array(chunk.data))
+        }
+        pushTo.push({ kind: 'terrain', chunks: forward })
         for (const [key, data] of record.chunks) {
           const [cx, cz] = key.split(',').map(Number)
           const chunk = world.getChunk(cx, cz)
@@ -648,25 +690,41 @@ export default function VoxelCanvas({
             chunk.isDirty = true
           }
         }
-      } else if (record.kind === 'object-place') {
-        if (selectedObjId === record.id) deselectObject()
-        removeObject(record.id)
-      } else if (record.kind === 'object-delete') {
-        const o = record.obj
-        const courseObj: CourseObject = {
-          id: o.id,
-          type: o.type,
-          position: o.position.clone(),
-          rotation: o.rotation,
+      } else if (record.kind === 'object-remove') {
+        const obj = objectManager.objects.get(record.id)
+        if (obj) {
+          pushTo.push({
+            kind: 'object-add',
+            id: obj.id,
+            type: obj.type,
+            position: obj.position.clone(),
+            rotation: obj.rotation,
+          })
+          if (selectedObjId === record.id) deselectObject()
+          removeObject(record.id)
         }
-        objectManager.objects.set(o.id, courseObj)
-        const group = createObjectMesh(o.type)
-        group.position.copy(o.position)
-        group.rotation.y = o.rotation
-        addObjectMesh(o.id, group)
+      } else if (record.kind === 'object-add') {
+        pushTo.push({ kind: 'object-remove', id: record.id })
+        const courseObj: CourseObject = {
+          id: record.id,
+          type: record.type,
+          position: record.position.clone(),
+          rotation: record.rotation,
+        }
+        objectManager.objects.set(record.id, courseObj)
+        const group = createObjectMesh(record.type)
+        group.position.copy(record.position)
+        group.rotation.y = record.rotation
+        addObjectMesh(record.id, group)
       } else if (record.kind === 'object-transform') {
         const obj = objectManager.objects.get(record.id)
         if (obj) {
+          pushTo.push({
+            kind: 'object-transform',
+            id: record.id,
+            position: obj.position.clone(),
+            rotation: obj.rotation,
+          })
           obj.position.copy(record.position)
           obj.rotation = record.rotation
           const grp = objectMeshes.get(record.id)
@@ -680,7 +738,24 @@ export default function VoxelCanvas({
       markMutated()
     }
 
+    function undo() {
+      const record = undoStack.pop()
+      if (!record) return
+      applyRecord(record, redoStack)
+      setCanUndo(undoStack.length > 0)
+      setCanRedo(redoStack.length > 0)
+    }
+
+    function redo() {
+      const record = redoStack.pop()
+      if (!record) return
+      applyRecord(record, undoStack)
+      setCanUndo(undoStack.length > 0)
+      setCanRedo(redoStack.length > 0)
+    }
+
     undoCallbackRef.current = undo
+    redoCallbackRef.current = redo
 
     // Stroke and gizmo-drag undo accumulators (reset each gesture)
     let strokeSnapshot: Map<string, Uint8Array> | null = null
@@ -922,7 +997,7 @@ export default function VoxelCanvas({
           group.position.copy(obj.position)
           group.rotation.y = obj.rotation
           addObjectMesh(obj.id, group)
-          pushUndo({ kind: 'object-place', id: obj.id })
+          pushUndo({ kind: 'object-remove', id: obj.id })
           deselectObject()
           markMutated()
         }
@@ -1042,27 +1117,16 @@ export default function VoxelCanvas({
         const obj = objectManager.objects.get(selectedObjId)
         if (obj) {
           pushUndo({
-            kind: 'object-delete',
-            obj: {
-              id: obj.id,
-              type: obj.type,
-              position: obj.position.clone(),
-              rotation: obj.rotation,
-            },
+            kind: 'object-add',
+            id: obj.id,
+            type: obj.type,
+            position: obj.position.clone(),
+            rotation: obj.rotation,
           })
         }
         removeObject(selectedObjId)
         deselectObject()
         markMutated()
-      }
-      if (
-        (e.ctrlKey || e.metaKey) &&
-        e.key === 'z' &&
-        !isWalkModeRef.current &&
-        !readOnlyRef.current
-      ) {
-        e.preventDefault()
-        undo()
       }
     }
 
@@ -1357,6 +1421,7 @@ export default function VoxelCanvas({
       deselectObjectRef.current = null
       selectedObjIdRef.current = null
       undoCallbackRef.current = null
+      redoCallbackRef.current = null
       cancelAnimationFrame(frameId)
       walkController.disable()
       container.removeEventListener('pointerdown', onPointerDown)
@@ -1406,6 +1471,8 @@ export default function VoxelCanvas({
           onEnterWalk={() => enterWalkRef.current?.()}
           canUndo={canUndo}
           onUndo={() => undoCallbackRef.current?.()}
+          canRedo={canRedo}
+          onRedo={() => redoCallbackRef.current?.()}
         />
       )}
       {isWalkMode && (

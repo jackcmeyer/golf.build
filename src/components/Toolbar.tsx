@@ -1,5 +1,15 @@
 import type { LucideIcon } from 'lucide-react'
-import { ArrowDown, ArrowUp, Globe, Minus, Paintbrush, Shapes, Waves } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Globe,
+  Minus,
+  Paintbrush,
+  Redo2,
+  Shapes,
+  Undo2,
+  Waves,
+} from 'lucide-react'
 import { VoxelType, VOXEL_COLORS } from '../voxelTypes'
 import { ToolMode } from '../engine/toolUtils'
 import { ObjectType, OBJECT_NAMES } from '../engine/objectTypes'
@@ -94,6 +104,8 @@ interface ToolbarProps {
   onEnterWalk: () => void
   canUndo: boolean
   onUndo: () => void
+  canRedo: boolean
+  onRedo: () => void
 }
 
 function formatHour(t: number): string {
@@ -118,12 +130,37 @@ export function Toolbar({
   onEnterWalk,
   canUndo,
   onUndo,
+  canRedo,
+  onRedo,
 }: ToolbarProps) {
   const isSculpt = toolMode !== 'orbit' && toolMode !== 'object'
   const isObject = toolMode === 'object'
+  const isMac = /mac/i.test(navigator.platform) || /mac os/i.test(navigator.userAgent)
 
   return (
     <div className="pointer-events-auto absolute top-4 left-4 flex min-w-[152px] flex-col gap-2.5 rounded-xl border border-white/[0.09] bg-black/[0.88] p-3 font-mono text-sm backdrop-blur-sm select-none">
+      {/* Undo / Redo */}
+      <div className="flex gap-1.5">
+        <button
+          onClick={onUndo}
+          disabled={!canUndo}
+          title={isMac ? 'Undo (⌘Z)' : 'Undo (Ctrl+Z)'}
+          className="flex flex-1 cursor-pointer items-center justify-center rounded border border-white/[0.08] bg-white/[0.04] py-1 transition-all hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-25"
+        >
+          <Undo2 size={13} strokeWidth={1.75} className="text-white/50" />
+        </button>
+        <button
+          onClick={onRedo}
+          disabled={!canRedo}
+          title={isMac ? 'Redo (⌘⇧Z)' : 'Redo (Ctrl+Shift+Z)'}
+          className="flex flex-1 cursor-pointer items-center justify-center rounded border border-white/[0.08] bg-white/[0.04] py-1 transition-all hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-25"
+        >
+          <Redo2 size={13} strokeWidth={1.75} className="text-white/50" />
+        </button>
+      </div>
+
+      <Separator className="bg-white/[0.08]" />
+
       {/* Orbit */}
       <ToggleGroup
         type="single"
@@ -308,16 +345,6 @@ export function Toolbar({
       )}
 
       <Separator className="bg-white/[0.08]" />
-
-      {/* Undo */}
-      <button
-        onClick={onUndo}
-        disabled={!canUndo}
-        title="Undo (Ctrl+Z)"
-        className="w-full cursor-pointer rounded border border-white/[0.08] bg-white/[0.04] py-1.5 text-center text-xs tracking-wide text-white/50 transition-all hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-30"
-      >
-        ↩ Undo
-      </button>
 
       {/* Walk mode entry */}
       <button
