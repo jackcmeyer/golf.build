@@ -102,6 +102,8 @@ interface ToolbarProps {
   onToolChange: (t: ToolMode) => void
   brushSize: number
   onBrushChange: (s: number) => void
+  brushRoundness: number
+  onRoundnessChange: (r: number) => void
   selectedSurface: VoxelType
   onSurfaceChange: (s: VoxelType) => void
   timeOfDay: number
@@ -130,6 +132,8 @@ export function Toolbar({
   onToolChange,
   brushSize,
   onBrushChange,
+  brushRoundness,
+  onRoundnessChange,
   selectedSurface,
   onSurfaceChange,
   timeOfDay,
@@ -266,17 +270,37 @@ export function Toolbar({
         ))}
       </ToggleGroup>
 
-      {/* Brush size — sculpt tools only */}
+      {/* Brush size + shape — sculpt tools only */}
       {isSculpt && (
-        <div className="flex flex-col gap-2">
-          <span className="text-[10px] text-white/35">Brush — {brushSize}vx</span>
-          <Slider
-            min={1}
-            max={12}
-            value={[brushSize]}
-            onValueChange={(vals) => onBrushChange(vals[0])}
-            className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
-          />
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
+            <span className="text-[10px] text-white/35">Brush — {brushSize}vx</span>
+            <Slider
+              min={1}
+              max={12}
+              value={[brushSize]}
+              onValueChange={(vals) => onBrushChange(vals[0])}
+              className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <span className="text-[10px] text-white/35">
+              Shape —{' '}
+              {brushRoundness === 0
+                ? 'Square'
+                : brushRoundness === 1
+                  ? 'Round'
+                  : `${Math.round(brushRoundness * 100)}% round`}
+            </span>
+            <Slider
+              min={0}
+              max={1}
+              step={0.1}
+              value={[brushRoundness]}
+              onValueChange={(vals) => onRoundnessChange(vals[0])}
+              className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
+            />
+          </div>
         </div>
       )}
 

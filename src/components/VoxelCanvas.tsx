@@ -103,6 +103,7 @@ export default function VoxelCanvas({
 
   const [toolMode, setToolMode] = useState<ToolMode>('paint')
   const [brushSize, setBrushSize] = useState(3)
+  const [brushRoundness, setBrushRoundness] = useState(0)
   const [selectedSurface, setSelectedSurface] = useState<VoxelType>(VoxelType.FAIRWAY_GRASS)
   const [timeOfDay, setTimeOfDay] = useState(14.0)
   const [selectedObjType, setSelectedObjType] = useState<ObjectType>(ObjectType.FLAGSTICK_CUP)
@@ -116,6 +117,7 @@ export default function VoxelCanvas({
 
   const toolRef = useRef(toolMode)
   const brushRef = useRef(brushSize)
+  const brushRoundnessRef = useRef(brushRoundness)
   const surfaceRef = useRef(selectedSurface)
   const timeOfDayRef = useRef(timeOfDay)
   const selectedObjTypeRef = useRef(selectedObjType)
@@ -148,6 +150,9 @@ export default function VoxelCanvas({
   useEffect(() => {
     brushRef.current = brushSize
   }, [brushSize])
+  useEffect(() => {
+    brushRoundnessRef.current = brushRoundness
+  }, [brushRoundness])
   useEffect(() => {
     surfaceRef.current = selectedSurface
   }, [selectedSurface])
@@ -663,7 +668,7 @@ export default function VoxelCanvas({
 
     function getAffectedChunkKeys(vx: number, vz: number, radius: number): Set<string> {
       const keys = new Set<string>()
-      for (const [x, z] of getColumnsInRadius(vx, vz, radius)) {
+      for (const [x, z] of getColumnsInRadius(vx, vz, radius, brushRoundnessRef.current)) {
         keys.add(`${Math.floor(x / CHUNK_SIZE)},${Math.floor(z / CHUNK_SIZE)}`)
       }
       return keys
@@ -837,7 +842,7 @@ export default function VoxelCanvas({
         highlightMesh.count = 0
         return
       }
-      const cols = getColumnsInRadius(hit.vx, hit.vz, brushRef.current)
+      const cols = getColumnsInRadius(hit.vx, hit.vz, brushRef.current, brushRoundnessRef.current)
       let i = 0
       for (const [hx, hz] of cols) {
         const h = world.getSurfaceHeight(hx, hz)
@@ -875,7 +880,7 @@ export default function VoxelCanvas({
       const tool = toolRef.current
       const radius = brushRef.current
       const surface = surfaceRef.current
-      const cols = getColumnsInRadius(vx, vz, radius)
+      const cols = getColumnsInRadius(vx, vz, radius, brushRoundnessRef.current)
 
       if (tool === 'raise') {
         for (const [x, z] of cols) {
@@ -1487,6 +1492,8 @@ export default function VoxelCanvas({
           onToolChange={setToolMode}
           brushSize={brushSize}
           onBrushChange={setBrushSize}
+          brushRoundness={brushRoundness}
+          onRoundnessChange={setBrushRoundness}
           selectedSurface={selectedSurface}
           onSurfaceChange={setSelectedSurface}
           timeOfDay={timeOfDay}
