@@ -173,43 +173,56 @@ export default function VoxelCanvas({
   // Load course data when courseId becomes available
   useEffect(() => {
     if (!courseId) return
-    const loader = hasSessionRef.current ? loadCourseData : loadLocalCourse
-    loader(courseId)
-      .then((result) => {
-        if (!result) return // no local data yet — fresh canvas
-        const { chunks, objects } = result
-        const world = worldRef.current
-        const objectManager = objectManagerRef.current
-        const addObjMesh = addObjectMeshRef.current
-        const removeObj = removeObjectRef.current
-        if (!world || !objectManager || !addObjMesh || !removeObj) return
+    const id = courseId // narrow to string for the async closure
+    let cancelled = false
 
-        for (const { cx, cz, data } of chunks) {
-          const chunk = world.getChunk(cx, cz)
-          if (chunk) {
-            chunk.data.set(data)
-            chunk.isDirty = true
-          }
+    async function doLoad() {
+      // Check session at load time — getSession() reads from the supabase cache synchronously
+      let useRemote = false
+      if (supabase) {
+        const { data } = await supabase.auth.getSession()
+        useRemote = !!data.session
+      }
+      const result = useRemote ? await loadCourseData(id) : await loadLocalCourse(id)
+      if (cancelled || !result) return // null = no local data yet, fresh canvas is fine
+
+      const { chunks, objects } = result
+      const world = worldRef.current
+      const objectManager = objectManagerRef.current
+      const addObjMesh = addObjectMeshRef.current
+      const removeObj = removeObjectRef.current
+      if (!world || !objectManager || !addObjMesh || !removeObj) return
+
+      for (const { cx, cz, data } of chunks) {
+        const chunk = world.getChunk(cx, cz)
+        if (chunk) {
+          chunk.data.set(data)
+          chunk.isDirty = true
         }
+      }
 
-        for (const id of [...objectManager.objects.keys()]) removeObj(id)
+      for (const id of [...objectManager.objects.keys()]) removeObj(id)
 
-        for (const raw of objects) {
-          const pos = new THREE.Vector3(raw.x, raw.y, raw.z)
-          const courseObj: CourseObject = {
-            id: raw.id,
-            type: raw.type as ObjectType,
-            position: pos,
-            rotation: raw.rotation,
-          }
-          objectManager.objects.set(raw.id, courseObj)
-          const group = createObjectMesh(raw.type as ObjectType)
-          group.position.copy(pos)
-          group.rotation.y = raw.rotation
-          addObjMesh(raw.id, group)
+      for (const raw of objects) {
+        const pos = new THREE.Vector3(raw.x, raw.y, raw.z)
+        const courseObj: CourseObject = {
+          id: raw.id,
+          type: raw.type as ObjectType,
+          position: pos,
+          rotation: raw.rotation,
         }
-      })
-      .catch((err) => console.error('Failed to load course:', err))
+        objectManager.objects.set(raw.id, courseObj)
+        const group = createObjectMesh(raw.type as ObjectType)
+        group.position.copy(pos)
+        group.rotation.y = raw.rotation
+        addObjMesh(raw.id, group)
+      }
+    }
+
+    doLoad().catch((err) => console.error('Failed to load course:', err))
+    return () => {
+      cancelled = true
+    }
   }, [courseId])
 
   // Sync orbit controls mouse buttons with tool mode

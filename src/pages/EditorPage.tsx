@@ -5,6 +5,8 @@ import { OnboardingModal } from '../components/OnboardingModal'
 import { supabase } from '../lib/supabase'
 import type { TerrainPreset } from '../engine/terrainPresets'
 
+const LAST_COURSE_KEY = 'golf_build:last_course_id'
+
 type PageState = 'loading' | 'onboarding' | 'ready'
 
 export function EditorPage() {
@@ -44,7 +46,13 @@ export function EditorPage() {
       if (cancelled) return
       setUserId(session?.user.id ?? null)
       if (!session || !supabase) {
-        setPageState('onboarding')
+        // Returning anonymous user — resume their local draft if one exists
+        const lastId = localStorage.getItem(LAST_COURSE_KEY)
+        if (lastId) {
+          navigate({ to: '/editor/$courseId', params: { courseId: lastId } })
+        } else {
+          setPageState('onboarding')
+        }
         return
       }
 
@@ -111,12 +119,10 @@ export function EditorPage() {
   }
 
   function handleOnboardingCreate(newCourseId: string, preset: TerrainPreset) {
+    setGuestPreset(preset)
     setPageState('ready')
-    if (newCourseId) {
-      navigate({ to: '/editor/$courseId', params: { courseId: newCourseId } })
-    } else {
-      setGuestPreset(preset)
-    }
+    localStorage.setItem(LAST_COURSE_KEY, newCourseId)
+    navigate({ to: '/editor/$courseId', params: { courseId: newCourseId } })
   }
 
   const ghostBtn: React.CSSProperties = {
@@ -136,7 +142,7 @@ export function EditorPage() {
         <VoxelCanvas
           key={courseId ?? 'guest'}
           courseId={courseId ?? null}
-          initialPreset={courseId ? undefined : guestPreset}
+          initialPreset={guestPreset}
           readOnly={false}
           screenshotCbRef={screenshotCbRef}
           onSaveStatus={setSaveStatus}
