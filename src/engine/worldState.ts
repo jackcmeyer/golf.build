@@ -97,7 +97,7 @@ export function getWaterColor(timeOfDay: number): THREE.Color {
   if (timeOfDay < 6 || timeOfDay > 21) return new THREE.Color(0x1a2a40)
   if (timeOfDay < 8) return new THREE.Color(0x7a8eb8)
   if (timeOfDay < 16) return new THREE.Color(0x3b9ed4)
-  if (timeOfDay < 19) return new THREE.Color(0xb08860) // warm bronze reflection, not vivid gold
-  if (timeOfDay < 21) return new THREE.Color(0x705040)
+  if (timeOfDay < 19) return new THREE.Color(0x2a70a0) // late afternoon: muted blue
+  if (timeOfDay < 21) return new THREE.Color(0x1a4060) // dusk: dark blue
   return new THREE.Color(0x1a2a40)
 }
