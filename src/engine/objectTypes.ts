@@ -7,6 +7,7 @@ export enum ObjectType {
   PINE_CONIFER = 'pine_conifer',
   OAK_FULL = 'oak_full',
   STONE_WALL = 'stone_wall',
+  GOLF_CART = 'golf_cart',
 }
 
 export const OBJECT_NAMES: Record<ObjectType, string> = {
@@ -18,6 +19,7 @@ export const OBJECT_NAMES: Record<ObjectType, string> = {
   [ObjectType.PINE_CONIFER]: 'Pine',
   [ObjectType.OAK_FULL]: 'Oak',
   [ObjectType.STONE_WALL]: 'Stone Wall',
+  [ObjectType.GOLF_CART]: 'Golf Cart',
 }
 
 // Footprint in meters [width, depth]
@@ -30,4 +32,5 @@ export const OBJECT_FOOTPRINT: Record<ObjectType, [number, number]> = {
   [ObjectType.PINE_CONIFER]: [4, 4],
   [ObjectType.OAK_FULL]: [6, 6],
   [ObjectType.STONE_WALL]: [4, 1],
+  [ObjectType.GOLF_CART]: [3, 4],
 }

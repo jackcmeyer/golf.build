@@ -83,6 +83,7 @@ const OBJECT_SWATCH: Record<ObjectType, string> = {
   [ObjectType.PINE_CONIFER]: '#2d6a1e',
   [ObjectType.OAK_FULL]: '#3a8030',
   [ObjectType.STONE_WALL]: '#888078',
+  [ObjectType.GOLF_CART]: '#f2f2f2',
 }
 
 const ITEM_BASE = [

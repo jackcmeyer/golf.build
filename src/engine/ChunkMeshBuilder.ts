@@ -116,17 +116,19 @@ export function buildChunkGeometry(
         const hexColor = VOXEL_COLORS[type as VoxelType] ?? 0xff00ff
         const [r, g, b] = hexToRgb(hexColor)
 
-        for (const face of faces) {
-          // Water top faces are rendered by the water mesh with an animated shader
-          if (WATER_TYPES.has(type) && face.dir[1] === 1) continue
+        // Water voxels are rendered entirely by the animated water mesh — skip all faces
+        // here so no water geometry ends up in the shadow-casting terrain mesh.
+        if (WATER_TYPES.has(type)) continue
 
+        for (const face of faces) {
           const [dx, dy, dz] = face.dir
           const neighborType = world.getVoxelType(
             worldOffsetX + lx + dx,
             ly + dy,
             worldOffsetZ + lz + dz,
           )
-          if (neighborType !== VoxelType.AIR) continue
+          // Treat water as transparent so terrain bank walls render into the stream.
+          if (neighborType !== VoxelType.AIR && !WATER_TYPES.has(neighborType)) continue
 
           const ndx = positions.length / 3
           const br = face.bright
@@ -181,7 +183,7 @@ export function buildWaterGeometry(
 
         const ndx = positions.length / 3
         for (const [vx, vy, vz] of topFace.corners) {
-          positions.push((lx + vx) * VOXEL_SIZE, (ly + vy) * VOXEL_SIZE, (lz + vz) * VOXEL_SIZE)
+          positions.push((lx + vx) * VOXEL_SIZE, (ly + vy) * VOXEL_HEIGHT, (lz + vz) * VOXEL_SIZE)
           normals.push(...topFace.normal)
         }
         indices.push(ndx, ndx + 1, ndx + 2, ndx + 1, ndx + 3, ndx + 2)

@@ -32,6 +32,7 @@ import { WalkController } from '../engine/WalkController'
 import { saveCourse, saveLocalCourse, loadCourseData, loadLocalCourse } from '../lib/persistence'
 import { supabase } from '../lib/supabase'
 import { initTerrain, type TerrainPreset } from '../engine/terrainPresets'
+import { getDefaultObjectPlacements } from '../engine/worldInit'
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -527,6 +528,18 @@ export default function VoxelCanvas({
     function markMutated() {
       lastMutationTimeRef.current = Date.now()
     }
+
+    // ── Default objects (new courses only — doLoad replaces them for existing courses) ──
+    function placeDefaultObjects() {
+      for (const { type, x, y, z } of getDefaultObjectPlacements(world)) {
+        const obj = objectManager.place(type, new THREE.Vector3(x, y, z))
+        const group = createObjectMesh(obj.type)
+        group.position.copy(obj.position)
+        addObjectMesh(obj.id, group)
+      }
+    }
+
+    placeDefaultObjects()
 
     // ── Gizmo ─────────────────────────────────────────────────────────────────
     const gizmo = new Gizmo(scene)
@@ -1419,6 +1432,7 @@ export default function VoxelCanvas({
       }
       initTerrain(world, preset)
       for (const chunk of world.chunks.values()) chunk.isDirty = true
+      if (preset === 'default') placeDefaultObjects()
       undoStack.length = 0
       redoStack.length = 0
       setCanUndo(false)

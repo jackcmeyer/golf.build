@@ -161,6 +161,59 @@ function buildStoneWall(): THREE.Group {
   return g
 }
 
+function buildGolfCart(): THREE.Group {
+  const g = new THREE.Group()
+
+  // Body
+  const body = box(2.4, 0.75, 3.8, flatMat(0xf2f2f2))
+  body.position.set(0, 0.55, 0)
+  g.add(body)
+
+  // Roof canopy
+  const roof = box(2.2, 0.08, 2.1, flatMat(0xe0e0e0))
+  roof.position.set(0, 1.85, -0.6)
+  g.add(roof)
+
+  // Canopy posts (4 corners)
+  const postMat = flatMat(0x999999)
+  for (const [px, pz] of [
+    [-0.9, 0.35],
+    [0.9, 0.35],
+    [-0.9, -1.55],
+    [0.9, -1.55],
+  ] as [number, number][]) {
+    const post = box(0.07, 0.97, 0.07, postMat)
+    post.position.set(px, 1.37, pz)
+    g.add(post)
+  }
+
+  // Seats
+  const seatMat = flatMat(0x2255aa)
+  const frontSeat = box(2.0, 0.14, 0.65, seatMat)
+  frontSeat.position.set(0, 0.97, 0.35)
+  g.add(frontSeat)
+  const backSeat = box(2.0, 0.14, 0.65, seatMat)
+  backSeat.position.set(0, 0.97, -0.45)
+  g.add(backSeat)
+
+  // Wheels (4)
+  const wheelMat = flatMat(0x222222)
+  for (const [wx, wz] of [
+    [-1.1, 1.4],
+    [1.1, 1.4],
+    [-1.1, -1.4],
+    [1.1, -1.4],
+  ] as [number, number][]) {
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.22, 8), wheelMat)
+    wheel.rotation.z = Math.PI / 2
+    wheel.position.set(wx, 0.34, wz)
+    wheel.castShadow = true
+    g.add(wheel)
+  }
+
+  return g
+}
+
 // ── Public factory ────────────────────────────────────────────────────────────
 
 export function createObjectMesh(type: ObjectType): THREE.Group {
@@ -181,6 +234,8 @@ export function createObjectMesh(type: ObjectType): THREE.Group {
       return buildOak()
     case ObjectType.STONE_WALL:
       return buildStoneWall()
+    case ObjectType.GOLF_CART:
+      return buildGolfCart()
   }
 }
 

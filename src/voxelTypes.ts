@@ -47,11 +47,11 @@ export enum VoxelType {
 
 // Hex colors for each surface type — charming, not photorealistic
 export const VOXEL_COLORS: Partial<Record<VoxelType, number>> = {
-  [VoxelType.FAIRWAY_GRASS]: 0x5c9e3a,
-  [VoxelType.GREEN_GRASS]: 0x2e8b2e,
-  [VoxelType.TEE_GRASS]: 0x4a8c32,
-  [VoxelType.INTERMEDIATE_ROUGH]: 0x7ab050,
-  [VoxelType.PRIMARY_ROUGH]: 0x8ab85a,
+  [VoxelType.FAIRWAY_GRASS]: 0x5a9c2c,
+  [VoxelType.GREEN_GRASS]: 0x80c040,
+  [VoxelType.TEE_GRASS]: 0x5a9c2c,
+  [VoxelType.INTERMEDIATE_ROUGH]: 0x487a22,
+  [VoxelType.PRIMARY_ROUGH]: 0x3a6018,
   [VoxelType.DEEP_ROUGH]: 0x4a6a28,
   [VoxelType.FESCUE]: 0xa0b870,
   [VoxelType.NATIVE_SCRUB]: 0x8a9a50,
