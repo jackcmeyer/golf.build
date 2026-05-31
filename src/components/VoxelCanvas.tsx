@@ -441,7 +441,7 @@ export default function VoxelCanvas({
         if (ti !== -1) terrainMeshes.splice(ti, 1)
       }
 
-      const geo = buildChunkGeometry(chunk, world, cx, cz, lod)
+      const geo = buildChunkGeometry(chunk, world, cx, cz)
       const waterGeo = buildWaterGeometry(chunk, world, cx, cz)
 
       const originX = cx * CHUNK_SIZE * VOXEL_SIZE - HALF_W
@@ -461,8 +461,10 @@ export default function VoxelCanvas({
         scene.add(outline)
       }
 
+      // Only render the animated water mesh at LOD 0 — at LOD 1 the top-face-only terrain
+      // creates gaps between columns of different heights through which the water bleeds visually.
       let water: THREE.Mesh | null = null
-      if (waterGeo.attributes.position) {
+      if (lod === 0 && waterGeo.attributes.position) {
         water = new THREE.Mesh(waterGeo, waterMaterial)
         water.position.set(originX, 0, originZ)
         scene.add(water)

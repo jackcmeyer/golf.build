@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import { rleEncode, rleDecode } from './rle'
 import type { VoxelWorld } from '../engine/VoxelWorld'
 import type { ObjectManager } from '../engine/ObjectManager'
+import { WORLD_WIDTH_CHUNKS, WORLD_DEPTH_CHUNKS } from '../engine/constants'
 
 export type RawObject = {
   id: string
@@ -48,6 +49,8 @@ export async function saveLocalCourse(
       z: obj.position.z,
       rotation: obj.rotation,
     })),
+    worldWidth: WORLD_WIDTH_CHUNKS,
+    worldDepth: WORLD_DEPTH_CHUNKS,
     updatedAt: new Date().toISOString(),
   }
   const db = await getLocalDb()
@@ -58,6 +61,10 @@ export async function loadLocalCourse(courseId: string): Promise<LoadedCourseDat
   const db = await getLocalDb()
   const record = await db.get('courses', courseId)
   if (!record) return null
+  // Discard saves from a different world size — chunks would land at wrong positions.
+  if (record.worldWidth !== WORLD_WIDTH_CHUNKS || record.worldDepth !== WORLD_DEPTH_CHUNKS) {
+    return null
+  }
   return {
     chunks: (record.chunks as Array<{ cx: number; cz: number; data: Uint8Array }>).map(
       ({ cx, cz, data }) => ({ cx, cz, data: rleDecode(data) }),

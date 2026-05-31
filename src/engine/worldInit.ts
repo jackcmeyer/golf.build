@@ -10,15 +10,16 @@ export interface DefaultObjectPlacement {
   z: number
 }
 
-// ── Layout constants (voxel coords, world = 224×224, center = 112,112) ────────
+// ── Layout constants (voxel coords, world = 736×736, center = 368,368) ────────
 
-const CX = 112 // center x
+const CX = 368 // center x
+const CZ = 368 // center z
 
 // Straight par 4, ~350 yards (320m). Tee is south (high wz, close to camera).
 // Green is north (low wz, far from camera — appears at top of default view).
-const TEE_Z = 190 // tee center wz
-const GREEN_Z = 30 // green center wz
-const STREAM_Z = 76 // stream center wz (~100 yards from green)
+const TEE_Z = CZ + 80 // tee center wz
+const GREEN_Z = CZ - 80 // green center wz
+const STREAM_Z = CZ - 34 // stream center wz (~100 yards from green)
 
 const FW = 9 // fairway half-width in voxels (18m each side → 36m total)
 const IR = 16 // intermediate-rough half-width
@@ -44,7 +45,7 @@ function surfaceTypeAt(wx: number, wz: number): VoxelType {
   if (wz > TEE_Z - 4 && wz <= TEE_Z + 2 && adx < 5) return VoxelType.TEE_GRASS
 
   // Stream (crosses hole width at ~100 yards from green, 8m wide)
-  if (wz >= STREAM_Z - 2 && wz <= STREAM_Z + 2 && wx > 50 && wx < 175) {
+  if (wz >= STREAM_Z - 2 && wz <= STREAM_Z + 2 && Math.abs(wx - CX) < 68) {
     return VoxelType.STILL_WATER
   }
 
@@ -60,7 +61,7 @@ function surfaceTypeAt(wx: number, wz: number): VoxelType {
   if (adx < IR && wz > GREEN_Z - 6 && wz < TEE_Z + 6) return VoxelType.INTERMEDIATE_ROUGH
 
   // Heather at far outer edges
-  if (adx > 68 || wz < 8 || wz > 214) return VoxelType.HEATHER
+  if (adx > 68 || wz < GREEN_Z - 22 || wz > TEE_Z + 24) return VoxelType.HEATHER
 
   return VoxelType.PRIMARY_ROUGH
 }
@@ -68,8 +69,8 @@ function surfaceTypeAt(wx: number, wz: number): VoxelType {
 // ── Height ────────────────────────────────────────────────────────────────────
 
 function heightAt(wx: number, wz: number): number {
-  const nx = (wx - CX) / 112
-  const nz = (wz - CX) / 112
+  const nx = (wx - CX) / CX
+  const nz = (wz - CZ) / CZ
 
   // Gentle rolling base (affects rough/heather most)
   const base =
@@ -84,7 +85,9 @@ function heightAt(wx: number, wz: number): number {
   // Raised green plateau
   const greenLift = Math.max(0, 1 - Math.hypot((wx - CX) / 12, (wz - GREEN_Z) / 12))
 
-  return Math.max(1, Math.round(base + teeLift * 4 + greenLift * 3))
+  // Min 3 ensures terrain is always above stream water level (forced h=2, surface at y=1.5).
+  // Heights 1-2 would Z-fight with the water mesh.
+  return Math.max(3, Math.round(base + teeLift * 4 + greenLift * 3))
 }
 
 // ── World init ────────────────────────────────────────────────────────────────
@@ -127,34 +130,34 @@ export function getDefaultObjectPlacements(world: VoxelWorld): DefaultObjectPlac
   }
 
   // Tree positions along the fairway, alternating oak/pine, skipping stream zone
-  // placed at the rough edge (CX ± IR = 96/128), every ~8 voxels (16m)
+  // placed at the rough edge (CX ± IR = CX-16/CX+16), every ~8 voxels (16m)
   const treeRows: [number, number, number, ObjectType][] = [
     // [leftWx, rightWx, wz, type]
-    // before stream (start at wz=60 to clear the greenside bunkers visually)
-    [94, 130, 60, ObjectType.PINE_CONIFER],
-    [96, 128, 68, ObjectType.OAK_FULL],
-    // gap for stream at wz=76
+    // before stream (start at GREEN_Z+30 to clear the greenside bunkers visually)
+    [CX - 18, CX + 18, GREEN_Z + 30, ObjectType.PINE_CONIFER],
+    [CX - 16, CX + 16, GREEN_Z + 38, ObjectType.OAK_FULL],
+    // gap for stream at STREAM_Z
     // after stream
-    [96, 128, 84, ObjectType.PINE_CONIFER],
-    [94, 130, 92, ObjectType.OAK_FULL],
-    [95, 129, 100, ObjectType.PINE_CONIFER],
-    [96, 128, 108, ObjectType.OAK_FULL],
-    [94, 130, 116, ObjectType.PINE_CONIFER],
-    [95, 129, 124, ObjectType.OAK_FULL],
-    [96, 128, 132, ObjectType.PINE_CONIFER],
-    [94, 130, 140, ObjectType.OAK_FULL],
-    [95, 129, 148, ObjectType.PINE_CONIFER],
-    [96, 128, 156, ObjectType.OAK_FULL],
-    [94, 130, 164, ObjectType.PINE_CONIFER],
-    [95, 129, 172, ObjectType.OAK_FULL],
-    [96, 128, 180, ObjectType.PINE_CONIFER],
+    [CX - 16, CX + 16, STREAM_Z + 8, ObjectType.PINE_CONIFER],
+    [CX - 18, CX + 18, STREAM_Z + 16, ObjectType.OAK_FULL],
+    [CX - 17, CX + 17, STREAM_Z + 24, ObjectType.PINE_CONIFER],
+    [CX - 16, CX + 16, STREAM_Z + 32, ObjectType.OAK_FULL],
+    [CX - 18, CX + 18, STREAM_Z + 40, ObjectType.PINE_CONIFER],
+    [CX - 17, CX + 17, STREAM_Z + 48, ObjectType.OAK_FULL],
+    [CX - 16, CX + 16, STREAM_Z + 56, ObjectType.PINE_CONIFER],
+    [CX - 18, CX + 18, STREAM_Z + 64, ObjectType.OAK_FULL],
+    [CX - 17, CX + 17, STREAM_Z + 72, ObjectType.PINE_CONIFER],
+    [CX - 16, CX + 16, STREAM_Z + 80, ObjectType.OAK_FULL],
+    [CX - 18, CX + 18, STREAM_Z + 88, ObjectType.PINE_CONIFER],
+    [CX - 17, CX + 17, STREAM_Z + 96, ObjectType.OAK_FULL],
+    [CX - 16, CX + 16, STREAM_Z + 104, ObjectType.PINE_CONIFER],
   ]
 
   const placements: DefaultObjectPlacement[] = [
     at(CX, GREEN_Z + 4, ObjectType.FLAGSTICK_CUP),
     at(CX - 3, TEE_Z - 1, ObjectType.TEE_MARKER_RED),
     at(CX + 3, TEE_Z - 1, ObjectType.TEE_MARKER_WHITE),
-    at(CP_L + 1, 110, ObjectType.GOLF_CART),
+    at(CP_L + 1, CZ, ObjectType.GOLF_CART),
   ]
 
   for (const [lx, rx, wz, type] of treeRows) {
