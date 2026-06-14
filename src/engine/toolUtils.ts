@@ -1,4 +1,12 @@
-export type ToolMode = 'raise' | 'lower' | 'flatten' | 'smooth' | 'paint' | 'orbit' | 'object'
+export type ToolMode =
+  | 'raise'
+  | 'lower'
+  | 'flatten'
+  | 'smooth'
+  | 'paint'
+  | 'orbit'
+  | 'object'
+  | 'hole'
 
 // roundness: 0 = square footprint, 1 = circular footprint. Values between round
 // the corners of the square with a corner radius of roundness * radius.

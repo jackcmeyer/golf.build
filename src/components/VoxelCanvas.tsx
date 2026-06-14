@@ -27,6 +27,9 @@ import {
 import { ObjectType, OBJECT_NAMES, OBJECT_FOOTPRINT } from '../engine/objectTypes'
 import { ObjectManager, CourseObject } from '../engine/ObjectManager'
 import { createObjectMesh, updateWindMaterials, buildGolfer } from '../engine/ObjectMeshFactory'
+import { AnnotationManager } from '../engine/AnnotationManager'
+import { createAnnotationMesh } from '../engine/AnnotationMeshFactory'
+import { type Annotation, cloneAnnotation, deserializeAnnotation } from '../engine/annotationTypes'
 import { Gizmo } from '../engine/Gizmo'
 import { WalkController } from '../engine/WalkController'
 import { saveCourse, saveLocalCourse, loadCourseData, loadLocalCourse } from '../lib/persistence'
@@ -88,6 +91,9 @@ export default function VoxelCanvas({
   const objectManagerRef = useRef<ObjectManager | null>(null)
   const addObjectMeshRef = useRef<((id: string, group: THREE.Group) => void) | null>(null)
   const removeObjectRef = useRef<((id: string) => void) | null>(null)
+  const annotationManagerRef = useRef<AnnotationManager | null>(null)
+  const addAnnotationMeshRef = useRef<((id: string, group: THREE.Group) => void) | null>(null)
+  const removeAnnotationRef = useRef<((id: string) => void) | null>(null)
 
   // Capture the preset at mount — component remounts (key changes) when this should change
   const initialPresetRef = useRef(initialPreset)
@@ -206,12 +212,16 @@ export default function VoxelCanvas({
       const result = useRemote ? await loadCourseData(id) : await loadLocalCourse(id)
       if (cancelled || !result) return // null = no local data yet, fresh canvas is fine
 
-      const { chunks, objects } = result
+      const { chunks, objects, annotations } = result
       const world = worldRef.current
       const objectManager = objectManagerRef.current
       const addObjMesh = addObjectMeshRef.current
       const removeObj = removeObjectRef.current
+      const annotationManager = annotationManagerRef.current
+      const addAnnMesh = addAnnotationMeshRef.current
+      const removeAnn = removeAnnotationRef.current
       if (!world || !objectManager || !addObjMesh || !removeObj) return
+      if (!annotationManager || !addAnnMesh || !removeAnn) return
 
       for (const { cx, cz, data } of chunks) {
         const chunk = world.getChunk(cx, cz)
@@ -236,6 +246,15 @@ export default function VoxelCanvas({
         group.position.copy(pos)
         group.rotation.y = raw.rotation
         addObjMesh(raw.id, group)
+      }
+
+      for (const id of [...annotationManager.annotations.keys()]) removeAnn(id)
+
+      for (const raw of annotations) {
+        const ann = deserializeAnnotation(raw)
+        if (!ann) continue
+        annotationManager.annotations.set(ann.id, ann)
+        addAnnMesh(ann.id, createAnnotationMesh(ann))
       }
     }
 
@@ -286,6 +305,7 @@ export default function VoxelCanvas({
       { hotkey: 'S', callback: () => !readOnlyRef.current && setToolMode('smooth') },
       { hotkey: 'P', callback: () => !readOnlyRef.current && setToolMode('paint') },
       { hotkey: 'E', callback: () => !readOnlyRef.current && setToolMode('object') },
+      { hotkey: 'H', callback: () => !readOnlyRef.current && setToolMode('hole') },
       { hotkey: '[', callback: () => setBrushSize((b) => Math.max(1, b - 1)) },
       { hotkey: ']', callback: () => setBrushSize((b) => Math.min(12, b + 1)) },
       {
@@ -543,6 +563,109 @@ export default function VoxelCanvas({
 
     placeDefaultObjects()
 
+    // ── Annotation system (yardage rings + tee→green holes) ─────────────────────
+    const annotationManager = new AnnotationManager()
+    annotationManagerRef.current = annotationManager
+    const annotationMeshes = new Map<string, THREE.Group>()
+    const annotationGroups: THREE.Group[] = []
+    const annotationRoot = new THREE.Group()
+    scene.add(annotationRoot)
+    let selectedAnnId: string | null = null
+
+    function addAnnotationMesh(id: string, group: THREE.Group) {
+      group.userData.annotationId = id
+      annotationRoot.add(group)
+      annotationMeshes.set(id, group)
+      annotationGroups.push(group)
+    }
+    addAnnotationMeshRef.current = addAnnotationMesh
+
+    // Remove the rendered mesh and dispose its geometry/materials/textures.
+    // Sprites share a static geometry, so only dispose geometry for meshes/lines.
+    function disposeAnnotationMesh(id: string) {
+      const group = annotationMeshes.get(id)
+      if (!group) return
+      annotationRoot.remove(group)
+      const idx = annotationGroups.indexOf(group)
+      if (idx !== -1) annotationGroups.splice(idx, 1)
+      group.traverse((o) => {
+        const obj = o as THREE.Mesh & THREE.Sprite
+        if ((obj.isMesh || (o as THREE.Line).isLine) && obj.geometry) obj.geometry.dispose()
+        const mat = obj.material as THREE.Material | THREE.Material[] | undefined
+        if (mat) {
+          for (const m of Array.isArray(mat) ? mat : [mat]) {
+            const map = (m as THREE.SpriteMaterial).map
+            if (map) map.dispose()
+            m.dispose()
+          }
+        }
+      })
+      annotationMeshes.delete(id)
+    }
+
+    function removeAnnotation(id: string) {
+      disposeAnnotationMesh(id)
+      annotationManager.remove(id)
+    }
+    removeAnnotationRef.current = removeAnnotation
+
+    function rebuildAnnotation(id: string) {
+      const ann = annotationManager.annotations.get(id)
+      if (!ann) return
+      disposeAnnotationMesh(id)
+      addAnnotationMesh(id, createAnnotationMesh(ann))
+    }
+
+    function selectAnnotation(id: string) {
+      selectedAnnId = id
+    }
+    function deselectAnnotation() {
+      selectedAnnId = null
+    }
+
+    // Drape a world XZ point onto the terrain surface (matches worldInit y formula).
+    function drapeToTerrain(x: number, z: number): THREE.Vector3 {
+      const vx = Math.max(
+        0,
+        Math.min(WORLD_WIDTH_VOXELS - 1, Math.floor(x / VOXEL_SIZE + WORLD_WIDTH_VOXELS / 2)),
+      )
+      const vz = Math.max(
+        0,
+        Math.min(WORLD_DEPTH_VOXELS - 1, Math.floor(z / VOXEL_SIZE + WORLD_DEPTH_VOXELS / 2)),
+      )
+      const h = world.getSurfaceHeight(vx, vz)
+      const y = (h >= 0 ? h + 1 : 1) * VOXEL_HEIGHT
+      return new THREE.Vector3(x, y, z)
+    }
+
+    // Two-click hole creation + handle dragging state.
+    let pendingTee: THREE.Vector3 | null = null
+    let pendingMarker: THREE.Mesh | null = null
+    let annDrag: { id: string; key: 'tee' | 'green' } | null = null
+    let preDragAnnotation: Annotation | null = null
+    const annDragPlane = new THREE.Plane()
+    const annDragHit = new THREE.Vector3()
+    const labelTmp = new THREE.Vector3()
+
+    function showPendingMarker(pos: THREE.Vector3) {
+      clearPendingMarker()
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(2.5, 12, 12),
+        new THREE.MeshBasicMaterial({ color: 0xffd24a, depthTest: false }),
+      )
+      m.position.copy(pos)
+      m.renderOrder = 1002
+      annotationRoot.add(m)
+      pendingMarker = m
+    }
+    function clearPendingMarker() {
+      if (!pendingMarker) return
+      annotationRoot.remove(pendingMarker)
+      pendingMarker.geometry.dispose()
+      ;(pendingMarker.material as THREE.Material).dispose()
+      pendingMarker = null
+    }
+
     // ── Gizmo ─────────────────────────────────────────────────────────────────
     const gizmo = new Gizmo(scene)
     gizmoRef.current = gizmo
@@ -668,6 +791,9 @@ export default function VoxelCanvas({
           rotation: number
         }
       | { kind: 'object-transform'; id: string; position: THREE.Vector3; rotation: number }
+      | { kind: 'annotation-remove'; id: string }
+      | { kind: 'annotation-add'; ann: Annotation }
+      | { kind: 'annotation-transform'; ann: Annotation }
 
     const MAX_UNDO = 50
     const undoStack: HistoryRecord[] = []
@@ -760,6 +886,28 @@ export default function VoxelCanvas({
             grp.rotation.y = record.rotation
           }
           if (selectedObjId === record.id) gizmo.attach(record.id, record.position, record.rotation)
+        }
+      } else if (record.kind === 'annotation-remove') {
+        const ann = annotationManager.annotations.get(record.id)
+        if (ann) {
+          pushTo.push({ kind: 'annotation-add', ann: cloneAnnotation(ann) })
+          if (selectedAnnId === record.id) deselectAnnotation()
+          removeAnnotation(record.id)
+        }
+      } else if (record.kind === 'annotation-add') {
+        pushTo.push({ kind: 'annotation-remove', id: record.ann.id })
+        const ann = cloneAnnotation(record.ann)
+        annotationManager.annotations.set(ann.id, ann)
+        addAnnotationMesh(ann.id, createAnnotationMesh(ann))
+      } else if (record.kind === 'annotation-transform') {
+        const cur = annotationManager.annotations.get(record.ann.id)
+        if (cur) {
+          pushTo.push({ kind: 'annotation-transform', ann: cloneAnnotation(cur) })
+          if (cur.kind === 'hole' && record.ann.kind === 'hole') {
+            cur.tee.copy(record.ann.tee)
+            cur.green.copy(record.ann.green)
+          }
+          rebuildAnnotation(cur.id)
         }
       }
       markMutated()
@@ -1031,6 +1179,60 @@ export default function VoxelCanvas({
         return
       }
 
+      if (tool === 'hole') {
+        const ndc = getNdc(e)
+
+        // 1. Try annotation handles → select + begin dragging that endpoint
+        raycaster.setFromCamera(ndc, camera)
+        const annHits = raycaster.intersectObjects(annotationGroups, true)
+        if (annHits.length > 0) {
+          let handleKey: string | undefined
+          let annId: string | undefined
+          let n: THREE.Object3D | null = annHits[0].object
+          while (n) {
+            if (handleKey === undefined && n.userData.handleKey) handleKey = n.userData.handleKey
+            if (n.userData.annotationId) {
+              annId = n.userData.annotationId as string
+              break
+            }
+            n = n.parent
+          }
+          if (annId) {
+            selectAnnotation(annId)
+            const ann = annotationManager.annotations.get(annId)
+            if (handleKey && ann) {
+              annDrag = { id: annId, key: handleKey as 'tee' | 'green' }
+              preDragAnnotation = cloneAnnotation(ann)
+              const pt = handleKey === 'tee' ? ann.tee : ann.green
+              annDragPlane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), pt)
+              isLeftDown = true
+              container.setPointerCapture(e.pointerId)
+            }
+            return
+          }
+        }
+
+        // 2. Click terrain → create
+        raycaster.setFromCamera(ndc, camera)
+        const terrainHits = raycaster.intersectObjects(terrainMeshes)
+        if (terrainHits.length > 0) {
+          const p = terrainHits[0].point
+          const draped = drapeToTerrain(p.x, p.z)
+          if (!pendingTee) {
+            pendingTee = draped
+            showPendingMarker(draped)
+          } else {
+            const ann = annotationManager.placeHole(pendingTee, draped)
+            addAnnotationMesh(ann.id, createAnnotationMesh(ann))
+            pushUndo({ kind: 'annotation-remove', id: ann.id })
+            clearPendingMarker()
+            pendingTee = null
+            markMutated()
+          }
+        }
+        return
+      }
+
       // Sculpt tools
       isLeftDown = true
       container.setPointerCapture(e.pointerId)
@@ -1078,6 +1280,20 @@ export default function VoxelCanvas({
         return
       }
 
+      if (tool === 'hole') {
+        highlightMesh.count = 0
+        if (isLeftDown && annDrag) {
+          const ndc = getNdc(e)
+          raycaster.setFromCamera(ndc, camera)
+          if (raycaster.ray.intersectPlane(annDragPlane, annDragHit)) {
+            const draped = drapeToTerrain(annDragHit.x, annDragHit.z)
+            annotationManager.move(annDrag.id, annDrag.key, draped)
+            rebuildAnnotation(annDrag.id)
+          }
+        }
+        return
+      }
+
       updateBrushHighlight(e)
       if (!isLeftDown || !(e.buttons & 1)) return
       if (tool === 'orbit') return
@@ -1109,6 +1325,14 @@ export default function VoxelCanvas({
         }
         gizmo.onPointerUp()
         preDragTransform = null
+      }
+      if (toolRef.current === 'hole') {
+        if (annDrag && preDragAnnotation) {
+          pushUndo({ kind: 'annotation-transform', ann: preDragAnnotation })
+          markMutated()
+        }
+        annDrag = null
+        preDragAnnotation = null
       }
     }
 
@@ -1154,6 +1378,26 @@ export default function VoxelCanvas({
         removeObject(selectedObjId)
         deselectObject()
         markMutated()
+      }
+
+      if (
+        (e.code === 'Delete' || e.code === 'Backspace') &&
+        !isWalkModeRef.current &&
+        !readOnlyRef.current &&
+        toolRef.current === 'hole' &&
+        selectedAnnId
+      ) {
+        e.preventDefault()
+        const ann = annotationManager.annotations.get(selectedAnnId)
+        if (ann) pushUndo({ kind: 'annotation-add', ann: cloneAnnotation(ann) })
+        removeAnnotation(selectedAnnId)
+        deselectAnnotation()
+        markMutated()
+      }
+
+      if (e.code === 'Escape' && pendingTee) {
+        pendingTee = null
+        clearPendingMarker()
       }
     }
 
@@ -1273,6 +1517,22 @@ export default function VoxelCanvas({
       fog.near = inWalk ? 180 : 1000
       fog.far = inWalk ? 260 : 2000
 
+      // Annotations are a build-mode overlay; hide in walk mode and keep labels
+      // a readable size by scaling them with camera distance.
+      annotationRoot.visible = !inWalk
+      if (!inWalk) {
+        annotationRoot.traverse((o) => {
+          if ((o as THREE.Sprite).isSprite && o.userData.labelAspect) {
+            const d = camera.position.distanceTo(o.getWorldPosition(labelTmp))
+            const s = Math.max(2, d * 0.02)
+            o.scale.set(s * (o.userData.labelAspect as number), s, 1)
+          } else if (o.userData.isAnnotationHandle) {
+            const d = camera.position.distanceTo(o.getWorldPosition(labelTmp))
+            o.scale.setScalar(Math.max(0.7, d * 0.006))
+          }
+        })
+      }
+
       // Wind
       const windAngle = elapsed * 0.04
       windDir.set(Math.cos(windAngle), Math.sin(windAngle) * 0.4).normalize()
@@ -1391,7 +1651,7 @@ export default function VoxelCanvas({
         const id = courseIdRef.current
         onSaveStatusRef.current?.('saving')
         const saveFunc = hasSessionRef.current ? saveCourse : saveLocalCourse
-        saveFunc(id, world, objectManager)
+        saveFunc(id, world, objectManager, annotationManager)
           .then(() => {
             onSaveStatusRef.current?.('saved')
             isSavingRef.current = false
@@ -1414,7 +1674,7 @@ export default function VoxelCanvas({
       lastMutationTimeRef.current = 0
       onSaveStatusRef.current?.('saving')
       const saveFunc = hasSessionRef.current ? saveCourse : saveLocalCourse
-      saveFunc(id, world, objectManager)
+      saveFunc(id, world, objectManager, annotationManager)
         .then(() => {
           onSaveStatusRef.current?.('saved')
           isSavingRef.current = false
@@ -1428,6 +1688,10 @@ export default function VoxelCanvas({
     function restart(preset: TerrainPreset) {
       for (const id of [...objectManager.objects.keys()]) removeObject(id)
       deselectObject()
+      for (const id of [...annotationManager.annotations.keys()]) removeAnnotation(id)
+      deselectAnnotation()
+      clearPendingMarker()
+      pendingTee = null
       for (const chunk of world.chunks.values()) {
         chunk.data.fill(0)
         chunk.isDirty = true
@@ -1465,6 +1729,9 @@ export default function VoxelCanvas({
       objectManagerRef.current = null
       addObjectMeshRef.current = null
       removeObjectRef.current = null
+      annotationManagerRef.current = null
+      addAnnotationMeshRef.current = null
+      removeAnnotationRef.current = null
       if (restartHolder) restartHolder.current = null
       deselectObjectRef.current = null
       selectedObjIdRef.current = null

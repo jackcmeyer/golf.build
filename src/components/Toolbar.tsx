@@ -8,6 +8,7 @@ import {
   Paintbrush,
   Redo2,
   RotateCcw,
+  Route,
   Settings,
   Shapes,
   Sun,
@@ -37,6 +38,7 @@ const SCULPT_TOOLS: { id: ToolMode; label: string; key: string; Icon: LucideIcon
   { id: 'flatten', label: 'Flatten', key: 'F', Icon: Minus },
   { id: 'smooth', label: 'Smooth', key: 'S', Icon: Waves },
   { id: 'object', label: 'Objects', key: 'E', Icon: Shapes },
+  { id: 'hole', label: 'Hole', key: 'H', Icon: Route },
 ]
 
 const PAINTABLE: VoxelType[] = [
@@ -200,7 +202,8 @@ export function Toolbar({
   canRedo,
   onRedo,
 }: ToolbarProps) {
-  const isSculpt = toolMode !== 'orbit' && toolMode !== 'object'
+  const isMeasure = toolMode === 'hole'
+  const isSculpt = toolMode !== 'orbit' && toolMode !== 'object' && !isMeasure
   const isObject = toolMode === 'object'
   const isMac = /mac/i.test(navigator.platform) || /mac os/i.test(navigator.userAgent)
   // The active tool's metadata — drives the contextual options panel. Undefined in orbit mode.
@@ -461,6 +464,15 @@ export function Toolbar({
                   Del: remove selected
                 </p>
               </>
+            )}
+
+            {toolMode === 'hole' && (
+              <p className="text-[10px] leading-relaxed text-white/30">
+                Click the tee, then the green, to draw a hole. Yardage arcs count up from the tee.
+                <br />
+                <br />
+                Drag an endpoint to adjust. Esc cancels. Del removes.
+              </p>
             )}
           </div>
         )}

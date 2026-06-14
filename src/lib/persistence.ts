@@ -3,6 +3,8 @@ import { supabase } from './supabase'
 import { rleEncode, rleDecode } from './rle'
 import type { VoxelWorld } from '../engine/VoxelWorld'
 import type { ObjectManager } from '../engine/ObjectManager'
+import type { AnnotationManager } from '../engine/AnnotationManager'
+import { serializeAnnotation, type RawAnnotation } from '../engine/annotationTypes'
 import { WORLD_WIDTH_CHUNKS, WORLD_DEPTH_CHUNKS } from '../engine/constants'
 
 export type RawObject = {
@@ -17,6 +19,7 @@ export type RawObject = {
 export type LoadedCourseData = {
   chunks: Array<{ cx: number; cz: number; data: Uint8Array }>
   objects: RawObject[]
+  annotations: RawAnnotation[]
 }
 
 // ── Local (IndexedDB) persistence ─────────────────────────────────────────────
@@ -33,6 +36,7 @@ export async function saveLocalCourse(
   courseId: string,
   world: VoxelWorld,
   objectManager: ObjectManager,
+  annotationManager: AnnotationManager,
 ): Promise<void> {
   const chunks: Array<{ cx: number; cz: number; data: Uint8Array }> = []
   for (const [key, chunk] of world.chunks) {
@@ -49,6 +53,7 @@ export async function saveLocalCourse(
       z: obj.position.z,
       rotation: obj.rotation,
     })),
+    annotations: annotationManager.getAll().map(serializeAnnotation),
     worldWidth: WORLD_WIDTH_CHUNKS,
     worldDepth: WORLD_DEPTH_CHUNKS,
     updatedAt: new Date().toISOString(),
@@ -70,6 +75,7 @@ export async function loadLocalCourse(courseId: string): Promise<LoadedCourseDat
       ({ cx, cz, data }) => ({ cx, cz, data: rleDecode(data) }),
     ),
     objects: record.objects as RawObject[],
+    annotations: (record.annotations as RawAnnotation[]) ?? [],
   }
 }
 
@@ -99,6 +105,7 @@ export async function saveCourse(
   courseId: string,
   world: VoxelWorld,
   objectManager: ObjectManager,
+  annotationManager: AnnotationManager,
 ): Promise<void> {
   if (!supabase) throw new Error('Supabase not configured')
 
@@ -148,6 +155,24 @@ export async function saveCourse(
     if (error) throw error
   }
 
+  // Replace annotations: delete all then re-insert
+  const { error: annDelErr } = await supabase
+    .from('course_annotations')
+    .delete()
+    .eq('course_id', courseId)
+  if (annDelErr) throw annDelErr
+
+  const annotations = annotationManager.getAll()
+  if (annotations.length > 0) {
+    const { error } = await supabase.from('course_annotations').insert(
+      annotations.map((ann) => {
+        const raw = serializeAnnotation(ann)
+        return { id: raw.id, course_id: courseId, kind: raw.kind, data: raw.data }
+      }),
+    )
+    if (error) throw error
+  }
+
   const { error: updErr } = await supabase
     .from('courses')
     .update({ updated_at: new Date().toISOString() })
@@ -185,7 +210,19 @@ export async function loadCourseData(courseId: string): Promise<LoadedCourseData
     rotation: (row.rotation as number) ?? 0,
   }))
 
-  return { chunks, objects }
+  const { data: annRows, error: annErr } = await supabase
+    .from('course_annotations')
+    .select('id, kind, data')
+    .eq('course_id', courseId)
+  if (annErr) throw annErr
+
+  const annotations: RawAnnotation[] = (annRows ?? []).map((row) => ({
+    id: row.id as string,
+    kind: row.kind as string,
+    data: row.data,
+  }))
+
+  return { chunks, objects, annotations }
 }
 
 export async function deleteCourse(courseId: string): Promise<void> {
