@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   ArrowDown,
   ArrowUp,
+  Footprints,
   Globe,
   Minus,
   Paintbrush,
@@ -9,6 +10,7 @@ import {
   RotateCcw,
   Settings,
   Shapes,
+  Sun,
   Trash2,
   Undo2,
   Waves,
@@ -18,13 +20,15 @@ import { ToolMode } from '../engine/toolUtils'
 import { ObjectType, OBJECT_NAMES } from '../engine/objectTypes'
 import { Slider } from '@/components/ui/slider'
 import { Separator } from '@/components/ui/separator'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 const SCULPT_TOOLS: { id: ToolMode; label: string; key: string; Icon: LucideIcon }[] = [
   { id: 'paint', label: 'Paint', key: 'P', Icon: Paintbrush },
@@ -86,17 +90,13 @@ const OBJECT_SWATCH: Record<ObjectType, string> = {
   [ObjectType.GOLF_CART]: '#f2f2f2',
 }
 
-const ITEM_BASE = [
-  'w-full justify-start text-xs tracking-wide',
-  'h-auto py-1.5 px-1.5',
-  'border-white/10 bg-white/[0.04] text-white/50',
-  'hover:bg-white/[0.08] hover:text-white/80',
-].join(' ')
-
-const ORBIT_ACTIVE =
-  'data-[state=on]:bg-blue-900/50  data-[state=on]:text-blue-200  data-[state=on]:border-blue-700/40'
-const SCULPT_ACTIVE =
-  'data-[state=on]:bg-green-900/50 data-[state=on]:text-green-200 data-[state=on]:border-green-800/40'
+// Shared base for every square icon button in the rail.
+const RAIL_BTN = cn(
+  'flex size-9 cursor-pointer items-center justify-center rounded-lg text-white/45 transition-all',
+  'hover:bg-white/[0.08] hover:text-white/85',
+  'data-[state=open]:bg-white/[0.10] data-[state=open]:text-white/90',
+  'disabled:cursor-not-allowed disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-white/45',
+)
 
 interface ToolbarProps {
   toolMode: ToolMode
@@ -128,6 +128,52 @@ function formatHour(t: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
+/** A single icon button in the rail, with a hover tooltip showing its label + shortcut. */
+function RailButton({
+  Icon,
+  label,
+  shortcut,
+  active,
+  accent = 'sculpt',
+  disabled,
+  onClick,
+}: {
+  Icon: LucideIcon
+  label: string
+  shortcut?: string
+  active?: boolean
+  accent?: 'orbit' | 'sculpt'
+  disabled?: boolean
+  onClick?: () => void
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onClick}
+          disabled={disabled}
+          aria-label={label}
+          className={cn(
+            RAIL_BTN,
+            active &&
+              accent === 'orbit' &&
+              'bg-blue-900/50 text-blue-200 hover:bg-blue-900/50 hover:text-blue-200',
+            active &&
+              accent === 'sculpt' &&
+              'bg-green-900/50 text-green-200 hover:bg-green-900/50 hover:text-green-200',
+          )}
+        >
+          <Icon size={17} strokeWidth={1.75} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={10}>
+        {label}
+        {shortcut && <span className="ml-1.5 opacity-50">{shortcut}</span>}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function Toolbar({
   toolMode,
   onToolChange,
@@ -154,279 +200,268 @@ export function Toolbar({
   const isSculpt = toolMode !== 'orbit' && toolMode !== 'object'
   const isObject = toolMode === 'object'
   const isMac = /mac/i.test(navigator.platform) || /mac os/i.test(navigator.userAgent)
+  // The active tool's metadata — drives the contextual options panel. Undefined in orbit mode.
+  const activeTool = SCULPT_TOOLS.find((t) => t.id === toolMode)
 
   return (
-    <div className="pointer-events-auto absolute top-4 left-4 flex min-w-[152px] flex-col gap-2.5 rounded-xl border border-white/[0.09] bg-black/[0.88] p-3 font-mono text-sm backdrop-blur-sm select-none">
-      {/* Undo / Redo / Settings */}
-      <div className="flex gap-1.5">
-        <button
-          onClick={onUndo}
-          disabled={!canUndo}
-          title={isMac ? 'Undo (⌘Z)' : 'Undo (Ctrl+Z)'}
-          className="flex flex-1 cursor-pointer items-center justify-center rounded border border-white/[0.08] bg-white/[0.04] py-1 transition-all hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-25"
-        >
-          <Undo2 size={13} strokeWidth={1.75} className="text-white/50" />
-        </button>
-        <button
-          onClick={onRedo}
-          disabled={!canRedo}
-          title={isMac ? 'Redo (⌘⇧Z)' : 'Redo (Ctrl+Shift+Z)'}
-          className="flex flex-1 cursor-pointer items-center justify-center rounded border border-white/[0.08] bg-white/[0.04] py-1 transition-all hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-25"
-        >
-          <Redo2 size={13} strokeWidth={1.75} className="text-white/50" />
-        </button>
-        {(onRestart || onDelete) && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                title="Course settings"
-                className="flex flex-1 cursor-pointer items-center justify-center rounded border border-white/[0.08] bg-white/[0.04] py-1 transition-all hover:bg-white/[0.08] hover:text-white/80"
+    <TooltipProvider delayDuration={0}>
+      <div className="pointer-events-none absolute top-4 left-4 flex items-start gap-2 font-mono select-none">
+        {/* Icon rail */}
+        <div className="pointer-events-auto flex flex-col gap-1 rounded-2xl border border-white/[0.09] bg-black/[0.88] p-1.5 backdrop-blur-sm">
+          {/* Orbit / navigate */}
+          <RailButton
+            Icon={Globe}
+            label="Orbit"
+            shortcut="O"
+            accent="orbit"
+            active={toolMode === 'orbit'}
+            onClick={() => onToolChange('orbit')}
+          />
+
+          <Separator className="my-0.5 bg-white/[0.08]" />
+
+          {/* Sculpt / paint / object tools */}
+          {SCULPT_TOOLS.map(({ id, label, key, Icon }) => (
+            <RailButton
+              key={id}
+              Icon={Icon}
+              label={label}
+              shortcut={key}
+              active={toolMode === id}
+              onClick={() => onToolChange(id)}
+            />
+          ))}
+
+          <Separator className="my-0.5 bg-white/[0.08]" />
+
+          {/* History */}
+          <RailButton
+            Icon={Undo2}
+            label="Undo"
+            shortcut={isMac ? '⌘Z' : 'Ctrl+Z'}
+            disabled={!canUndo}
+            onClick={onUndo}
+          />
+          <RailButton
+            Icon={Redo2}
+            label="Redo"
+            shortcut={isMac ? '⌘⇧Z' : 'Ctrl+⇧Z'}
+            disabled={!canRedo}
+            onClick={onRedo}
+          />
+
+          {/* Course settings */}
+          {(onRestart || onDelete) && (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <button aria-label="Settings" className={RAIL_BTN}>
+                      <Settings size={17} strokeWidth={1.75} />
+                    </button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="right" sideOffset={10}>
+                  Settings
+                </TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent
+                side="right"
+                align="start"
+                sideOffset={10}
+                className="min-w-44 rounded-lg border border-white/[0.12] bg-black/[0.92] p-1 font-mono text-white/70 backdrop-blur-sm"
               >
-                <Settings size={13} strokeWidth={1.75} className="text-white/50" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
+                {onRestart && (
+                  <DropdownMenuItem
+                    onClick={onRestart}
+                    className="cursor-pointer rounded px-2 py-1.5 text-xs tracking-wide focus:bg-white/[0.08] focus:text-white/90"
+                  >
+                    <RotateCcw size={13} strokeWidth={1.75} />
+                    Restart course
+                  </DropdownMenuItem>
+                )}
+                {onDelete && (
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={onDelete}
+                    className="cursor-pointer rounded px-2 py-1.5 text-xs tracking-wide text-red-400/80 focus:bg-red-500/15 focus:text-red-300"
+                  >
+                    <Trash2 size={13} strokeWidth={1.75} />
+                    Delete course
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          <Separator className="my-0.5 bg-white/[0.08]" />
+
+          {/* Time of day */}
+          <Popover>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button aria-label="Time of day" className={RAIL_BTN}>
+                    <Sun size={17} strokeWidth={1.75} />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={10}>
+                Time — {formatHour(timeOfDay)}
+              </TooltipContent>
+            </Tooltip>
+            <PopoverContent
+              side="right"
               align="start"
-              className="min-w-44 rounded-lg border border-white/[0.12] bg-black/[0.92] p-1 font-mono text-white/70 backdrop-blur-sm"
+              sideOffset={10}
+              className="flex w-52 flex-col gap-2 rounded-xl border border-white/[0.12] bg-black/[0.92] p-3 font-mono text-white/70 shadow-xl ring-0 backdrop-blur-sm"
             >
-              {onRestart && (
-                <DropdownMenuItem
-                  onClick={onRestart}
-                  className="cursor-pointer rounded px-2 py-1.5 text-xs tracking-wide focus:bg-white/[0.08] focus:text-white/90"
+              <span className="text-[10px] text-white/35">Time — {formatHour(timeOfDay)}</span>
+              <Slider
+                min={0}
+                max={24}
+                step={0.1}
+                value={[timeOfDay]}
+                onValueChange={(vals) => onTimeOfDayChange(vals[0])}
+                className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
+              />
+            </PopoverContent>
+          </Popover>
+
+          {/* Walk mode */}
+          <RailButton Icon={Footprints} label="Walk mode" onClick={onEnterWalk} />
+        </div>
+
+        {/* Contextual options for the active tool */}
+        {activeTool && (
+          <div className="pointer-events-auto flex w-44 flex-col gap-3 rounded-xl border border-white/[0.09] bg-black/[0.88] p-3 text-sm backdrop-blur-sm">
+            <div className="text-[11px] font-medium tracking-wide text-white/55">
+              {activeTool.label}
+            </div>
+
+            {/* Surface palette — paint mode only */}
+            {toolMode === 'paint' && (
+              <div className="flex flex-wrap gap-1">
+                {PAINTABLE.map((s) => {
+                  const hex = VOXEL_COLORS[s] ?? 0x888888
+                  const r = (hex >> 16) & 0xff
+                  const g = (hex >> 8) & 0xff
+                  const b = hex & 0xff
+                  const active = selectedSurface === s
+                  return (
+                    <div
+                      key={s}
+                      title={SURFACE_LABELS[s] ?? String(s)}
+                      onClick={() => onSurfaceChange(s)}
+                      style={{ background: `rgb(${r},${g},${b})` }}
+                      className={cn(
+                        'box-border size-6 cursor-pointer rounded border-2 transition-all',
+                        active
+                          ? 'border-white shadow-[0_0_0_1px_oklch(0.527_0.154_150.069)]'
+                          : 'border-black/30 hover:border-white/40',
+                      )}
+                    />
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Brush size + shape — sculpt tools (incl. paint) */}
+            {isSculpt && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <span className="text-[10px] text-white/35">Brush — {brushSize}vx</span>
+                  <Slider
+                    min={1}
+                    max={12}
+                    value={[brushSize]}
+                    onValueChange={(vals) => onBrushChange(vals[0])}
+                    className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className="text-[10px] text-white/35">
+                    Shape —{' '}
+                    {brushRoundness === 0
+                      ? 'Square'
+                      : brushRoundness === 1
+                        ? 'Round'
+                        : `${Math.round(brushRoundness * 100)}% round`}
+                  </span>
+                  <Slider
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    value={[brushRoundness]}
+                    onValueChange={(vals) => onRoundnessChange(vals[0])}
+                    className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
+                  />
+                </div>
+                <p className="text-[10px] leading-relaxed text-white/22">
+                  L-drag: sculpt
+                  <br />
+                  R-drag: orbit
+                  <br />
+                  Scroll: zoom
+                </p>
+              </>
+            )}
+
+            {/* Object picker + golfer — object mode only */}
+            {isObject && (
+              <>
+                <div className="flex flex-col gap-0.5">
+                  {ALL_OBJECT_TYPES.map((t) => {
+                    const active = selectedObjType === t
+                    return (
+                      <div
+                        key={t}
+                        onClick={() => onObjTypeChange(t)}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] transition-all',
+                          active
+                            ? 'bg-green-900/50 text-green-200'
+                            : 'text-white/50 hover:bg-white/[0.06] hover:text-white/80',
+                        )}
+                      >
+                        <span
+                          className="inline-block size-2.5 shrink-0 rounded-sm border border-white/20"
+                          style={{ background: OBJECT_SWATCH[t] }}
+                        />
+                        {OBJECT_NAMES[t]}
+                      </div>
+                    )
+                  })}
+                </div>
+                <Separator className="bg-white/[0.08]" />
+                <div
+                  onClick={onGolferToggle}
+                  className={cn(
+                    'flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] transition-all',
+                    showGolfer
+                      ? 'bg-white/10 text-white/90'
+                      : 'text-white/40 hover:bg-white/[0.06] hover:text-white/70',
+                  )}
                 >
-                  <RotateCcw size={13} strokeWidth={1.75} />
-                  Restart course
-                </DropdownMenuItem>
-              )}
-              {onDelete && (
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={onDelete}
-                  className="cursor-pointer rounded px-2 py-1.5 text-xs tracking-wide text-red-400/80 focus:bg-red-500/15 focus:text-red-300"
-                >
-                  <Trash2 size={13} strokeWidth={1.75} />
-                  Delete course
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  <span className="inline-block size-2.5 shrink-0 rounded-full border border-white/30 bg-white/60" />
+                  Golfer silhouette
+                </div>
+                <p className="text-[10px] leading-relaxed text-white/22">
+                  Click terrain: place
+                  <br />
+                  Click object: select
+                  <br />
+                  Drag arrows: move
+                  <br />
+                  Drag ring: rotate
+                  <br />
+                  Del: remove selected
+                </p>
+              </>
+            )}
+          </div>
         )}
       </div>
-
-      <Separator className="bg-white/[0.08]" />
-
-      {/* Orbit */}
-      <ToggleGroup
-        type="single"
-        value={toolMode === 'orbit' ? 'orbit' : ''}
-        onValueChange={(v) => {
-          if (v) onToolChange('orbit')
-        }}
-        orientation="vertical"
-        spacing={0}
-        variant="outline"
-        size="sm"
-        className="w-full"
-      >
-        <ToggleGroupItem value="orbit" className={`${ITEM_BASE} ${ORBIT_ACTIVE}`}>
-          <span className="flex w-full items-center justify-between">
-            <span className="flex items-center gap-2">
-              <Globe size={12} strokeWidth={1.75} />
-              Orbit
-            </span>
-            <kbd className="rounded border border-white/10 px-1 font-mono text-[9px] text-white/25">
-              O
-            </kbd>
-          </span>
-        </ToggleGroupItem>
-      </ToggleGroup>
-
-      <Separator className="bg-white/[0.08]" />
-
-      {/* Sculpt + object tools */}
-      <ToggleGroup
-        type="single"
-        value={isSculpt ? toolMode : isObject ? 'object' : ''}
-        onValueChange={(v) => {
-          if (v) onToolChange(v as ToolMode)
-        }}
-        orientation="vertical"
-        spacing={0}
-        variant="outline"
-        size="sm"
-        className="w-full"
-      >
-        {SCULPT_TOOLS.map(({ id, label, key, Icon }) => (
-          <ToggleGroupItem key={id} value={id} className={`${ITEM_BASE} ${SCULPT_ACTIVE}`}>
-            <span className="flex w-full items-center justify-between">
-              <span className="flex items-center gap-2">
-                <Icon size={12} strokeWidth={1.75} />
-                {label}
-              </span>
-              <kbd className="rounded border border-white/10 px-1 font-mono text-[9px] text-white/25">
-                {key}
-              </kbd>
-            </span>
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
-
-      {/* Brush size + shape — sculpt tools only */}
-      {isSculpt && (
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-2">
-            <span className="text-[10px] text-white/35">Brush — {brushSize}vx</span>
-            <Slider
-              min={1}
-              max={12}
-              value={[brushSize]}
-              onValueChange={(vals) => onBrushChange(vals[0])}
-              className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <span className="text-[10px] text-white/35">
-              Shape —{' '}
-              {brushRoundness === 0
-                ? 'Square'
-                : brushRoundness === 1
-                  ? 'Round'
-                  : `${Math.round(brushRoundness * 100)}% round`}
-            </span>
-            <Slider
-              min={0}
-              max={1}
-              step={0.1}
-              value={[brushRoundness]}
-              onValueChange={(vals) => onRoundnessChange(vals[0])}
-              className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Surface palette — paint mode only */}
-      {toolMode === 'paint' && (
-        <div>
-          <div className="mb-1.5 text-[10px] text-white/35">Surface</div>
-          <div className="flex flex-wrap gap-1">
-            {PAINTABLE.map((s) => {
-              const hex = VOXEL_COLORS[s] ?? 0x888888
-              const r = (hex >> 16) & 0xff
-              const g = (hex >> 8) & 0xff
-              const b = hex & 0xff
-              const active = selectedSurface === s
-              return (
-                <div
-                  key={s}
-                  title={SURFACE_LABELS[s] ?? String(s)}
-                  onClick={() => onSurfaceChange(s)}
-                  style={{ background: `rgb(${r},${g},${b})` }}
-                  className={[
-                    'box-border size-6 cursor-pointer rounded border-2 transition-all',
-                    active
-                      ? 'border-white shadow-[0_0_0_1px_oklch(0.527_0.154_150.069)]'
-                      : 'border-black/30 hover:border-white/40',
-                  ].join(' ')}
-                />
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Object picker + golfer — object mode only */}
-      {isObject && (
-        <div className="flex flex-col gap-2">
-          <div className="text-[10px] text-white/35">Place object</div>
-          <div className="flex flex-col gap-0.5">
-            {ALL_OBJECT_TYPES.map((t) => {
-              const active = selectedObjType === t
-              return (
-                <div
-                  key={t}
-                  onClick={() => onObjTypeChange(t)}
-                  className={[
-                    'flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] transition-all',
-                    active
-                      ? 'bg-green-900/50 text-green-200'
-                      : 'text-white/50 hover:bg-white/[0.06] hover:text-white/80',
-                  ].join(' ')}
-                >
-                  <span
-                    className="inline-block size-2.5 shrink-0 rounded-sm border border-white/20"
-                    style={{ background: OBJECT_SWATCH[t] }}
-                  />
-                  {OBJECT_NAMES[t]}
-                </div>
-              )
-            })}
-          </div>
-          <Separator className="bg-white/[0.08]" />
-          <div
-            onClick={onGolferToggle}
-            className={[
-              'flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] transition-all',
-              showGolfer
-                ? 'bg-white/10 text-white/90'
-                : 'text-white/40 hover:bg-white/[0.06] hover:text-white/70',
-            ].join(' ')}
-          >
-            <span className="inline-block size-2.5 shrink-0 rounded-full border border-white/30 bg-white/60" />
-            Golfer silhouette
-          </div>
-          <p className="text-[10px] leading-relaxed text-white/22">
-            Click terrain: place
-            <br />
-            Click object: select
-            <br />
-            Drag arrows: move
-            <br />
-            Drag ring: rotate
-            <br />
-            Del: remove selected
-          </p>
-        </div>
-      )}
-
-      <Separator className="bg-white/[0.08]" />
-
-      {/* Time of day */}
-      <div className="flex flex-col gap-2">
-        <span className="text-[10px] text-white/35">Time — {formatHour(timeOfDay)}</span>
-        <Slider
-          min={0}
-          max={24}
-          step={0.1}
-          value={[timeOfDay]}
-          onValueChange={(vals) => onTimeOfDayChange(vals[0])}
-          className="[&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15"
-        />
-      </div>
-
-      {/* Keyboard / touch hints — sculpt/orbit only */}
-      {!isObject && (
-        <p className="text-[10px] leading-relaxed text-white/22">
-          L-drag: sculpt
-          <br />
-          R-drag: orbit
-          <br />
-          Scroll: zoom
-          <br />
-          Mobile: orbit mode
-          <br />+ 2-finger zoom
-        </p>
-      )}
-
-      <Separator className="bg-white/[0.08]" />
-
-      {/* Walk mode entry */}
-      <button
-        onClick={onEnterWalk}
-        className="w-full cursor-pointer rounded border border-green-800/40 bg-green-900/20 py-1.5 text-center text-xs tracking-wide text-green-300/70 transition-all hover:bg-green-900/40 hover:text-green-200"
-      >
-        Walk mode
-      </button>
-    </div>
+    </TooltipProvider>
   )
 }
