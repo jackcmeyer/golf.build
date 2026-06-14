@@ -98,6 +98,9 @@ const RAIL_BTN = cn(
   'disabled:cursor-not-allowed disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-white/45',
 )
 
+// Frosted-glass styling shared by every hover tooltip.
+const TOOLTIP_GLASS = 'glass rounded-lg bg-neutral-950/70 text-white/90'
+
 interface ToolbarProps {
   toolMode: ToolMode
   onToolChange: (t: ToolMode) => void
@@ -166,7 +169,7 @@ function RailButton({
           <Icon size={17} strokeWidth={1.75} />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="right" sideOffset={10}>
+      <TooltipContent side="right" sideOffset={10} className={TOOLTIP_GLASS}>
         {label}
         {shortcut && <span className="ml-1.5 opacity-50">{shortcut}</span>}
       </TooltipContent>
@@ -205,9 +208,9 @@ export function Toolbar({
 
   return (
     <TooltipProvider delayDuration={0}>
-      <div className="pointer-events-none absolute top-4 left-4 flex items-start gap-2 font-mono select-none">
+      <div className="pointer-events-none absolute top-1/2 left-4 flex -translate-y-1/2 items-start gap-2 font-mono select-none">
         {/* Icon rail */}
-        <div className="pointer-events-auto flex flex-col gap-1 rounded-2xl border border-white/[0.09] bg-black/[0.88] p-1.5 backdrop-blur-sm">
+        <div className="glass pointer-events-auto flex flex-col gap-1 rounded-2xl bg-neutral-950/55 p-1.5">
           {/* Orbit / navigate */}
           <RailButton
             Icon={Globe}
@@ -261,7 +264,7 @@ export function Toolbar({
                     </button>
                   </DropdownMenuTrigger>
                 </TooltipTrigger>
-                <TooltipContent side="right" sideOffset={10}>
+                <TooltipContent side="right" sideOffset={10} className={TOOLTIP_GLASS}>
                   Settings
                 </TooltipContent>
               </Tooltip>
@@ -269,7 +272,7 @@ export function Toolbar({
                 side="right"
                 align="start"
                 sideOffset={10}
-                className="min-w-44 rounded-lg border border-white/[0.12] bg-black/[0.92] p-1 font-mono text-white/70 backdrop-blur-sm"
+                className="glass min-w-44 rounded-lg bg-neutral-950/65 p-1 font-mono text-white/70"
               >
                 {onRestart && (
                   <DropdownMenuItem
@@ -306,7 +309,7 @@ export function Toolbar({
                   </button>
                 </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={10}>
+              <TooltipContent side="right" sideOffset={10} className={TOOLTIP_GLASS}>
                 Time — {formatHour(timeOfDay)}
               </TooltipContent>
             </Tooltip>
@@ -314,7 +317,7 @@ export function Toolbar({
               side="right"
               align="start"
               sideOffset={10}
-              className="flex w-52 flex-col gap-2 rounded-xl border border-white/[0.12] bg-black/[0.92] p-3 font-mono text-white/70 shadow-xl ring-0 backdrop-blur-sm"
+              className="glass flex w-52 flex-col gap-2 rounded-xl bg-neutral-950/65 p-3 font-mono text-white/70"
             >
               <span className="text-[10px] text-white/35">Time — {formatHour(timeOfDay)}</span>
               <Slider
@@ -334,7 +337,7 @@ export function Toolbar({
 
         {/* Contextual options for the active tool */}
         {activeTool && (
-          <div className="pointer-events-auto flex w-44 flex-col gap-3 rounded-xl border border-white/[0.09] bg-black/[0.88] p-3 text-sm backdrop-blur-sm">
+          <div className="glass pointer-events-auto flex w-44 flex-col gap-3 rounded-xl bg-neutral-950/50 p-3 text-sm">
             <div className="text-[11px] font-medium tracking-wide text-white/55">
               {activeTool.label}
             </div>
